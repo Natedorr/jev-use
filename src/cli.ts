@@ -215,7 +215,7 @@ async function judgeOnce(args: Args): Promise<void> {
 }
 
 /** The allow rules a harness needs before it may call jev's MCP tools. */
-const MCP_ALLOW_RULES = ["mcp__jev__jev_judge", "mcp__jev__jev_gate", "mcp__jev__jev_filter"];
+const MCP_ALLOW_RULES = ["mcp__jev__jev_judge", "mcp__jev__jev_gate", "mcp__jev__jev_filter", "mcp__jev__jev_wait"];
 
 /** The settings files a user would put those rules in: their own, then this project's. */
 function claudeSettingsFiles(): string[] {
@@ -274,7 +274,7 @@ function reportClaudePermissions(): void {
       "          MCP tools are never auto-allowed (acceptEdits covers file edits only),\n" +
       "          and headless `claude -p` has nobody to ask, so the call is refused.\n" +
       `          Add to ${join(homedir(), ".claude", "settings.json")} (or a project's .claude/settings.json):\n\n` +
-      '          {"permissions": {"allow": ["mcp__jev__jev_judge", "mcp__jev__jev_gate", "mcp__jev__jev_filter"]}}\n\n' +
+      '          {"permissions": {"allow": ["mcp__jev__jev_judge", "mcp__jev__jev_gate", "mcp__jev__jev_filter", "mcp__jev__jev_wait"]}}\n\n' +
       `          checked: ${claudeSettingsFiles().join(", ")}\n`,
   );
 }

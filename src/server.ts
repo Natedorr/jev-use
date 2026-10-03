@@ -20,6 +20,7 @@ import type { JevBackend } from "./backends/types.js";
 import { registerFilter } from "./tools/filter.js";
 import { registerGate } from "./tools/gate.js";
 import { registerJudge } from "./tools/judge.js";
+import { registerWait } from "./tools/wait.js";
 import type { ToolContext } from "./tools/context.js";
 
 export const SERVER_NAME = "jev-use";
@@ -61,5 +62,6 @@ export function createServer(
   registerJudge(server, ctx);
   registerGate(server, ctx);
   registerFilter(server, ctx);
+  registerWait(server, ctx);
   return server;
 }

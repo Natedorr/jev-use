@@ -31,10 +31,10 @@ async function connectedClient(backend = new MockBackend()) {
 }
 
 describe("MCP server", () => {
-  it("exposes exactly jev_judge, jev_gate and jev_filter", async () => {
+  it("exposes exactly jev_judge, jev_gate, jev_filter and jev_wait", async () => {
     const client = await connectedClient();
     const tools = await client.listTools();
-    expect(tools.tools.map((t) => t.name).sort()).toEqual(["jev_filter", "jev_gate", "jev_judge"]);
+    expect(tools.tools.map((t) => t.name).sort()).toEqual(["jev_filter", "jev_gate", "jev_judge", "jev_wait"]);
   });
 
   /**
@@ -179,6 +179,23 @@ describe("source on jev_judge", () => {
     expect(parsed.source).toEqual({ origin: "run.log tail 1", truncated: false });
     expect(seen[0]).toContain("step 2 FAILED");
     expect(seen[0]).not.toContain("step 1 ok");
+  });
+
+  it("jev_wait: returns a status over MCP for a pid that is already gone", async () => {
+    const { backend } = recording({ outcome: { answer: "success" } });
+    const client = await withFile("all done\n", backend);
+    const res = await client.callTool({
+      name: "jev_wait",
+      arguments: { output_file: "run.log", pid: 2 ** 22 + 12345, timeout_s: 5 },
+    });
+    expect(res.isError).toBeFalsy();
+    expect(textOf(res)).toMatchObject({ status: 3, label: "exited", alive: false });
+  });
+
+  it("jev_wait: errors without output_file or pid", async () => {
+    const client = await withFile("x\n");
+    const res = await client.callTool({ name: "jev_wait", arguments: {} });
+    expect(res.isError).toBe(true);
   });
 
   it("uses state as framing text when both are given", async () => {
