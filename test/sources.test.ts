@@ -24,7 +24,7 @@ beforeAll(() => {
   );
   writeFileSync(join(root, "blob.bin"), Buffer.from([1, 2, 0, 3, 4]));
   writeFileSync(join(root, "secret.txt"), "deploy with --token abc123secret now\n");
-  ctx = { root, redact: false, maxChars: 100_000 };
+  ctx = { roots: [root], redact: false, maxChars: 100_000 };
 });
 
 describe("resolveSource", () => {

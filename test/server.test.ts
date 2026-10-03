@@ -5,9 +5,11 @@
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { ListRootsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { MockBackend } from "../src/backends/mock.js";
 import {
@@ -249,5 +251,73 @@ describe("source on jev_gate", () => {
     expect(parsed.decision).toBe("allow");
     expect(parsed.source.truncated).toBe(true);
     expect(estimateTokens(seen[0])).toBeLessThan(8_192 - 512);
+  });
+});
+
+describe("MCP roots", () => {
+  async function withRoots(initial: string[], fallback: string, backend = new MockBackend()) {
+    let roots = initial;
+    const server = createServer(backend, { root: fallback, env: {} });
+    const client = new Client(
+      { name: "test-client", version: "0.0.0" },
+      { capabilities: { roots: { listChanged: true } } },
+    );
+    client.setRequestHandler(ListRootsRequestSchema, async () => ({
+      roots: roots.map((path) => ({ uri: pathToFileURL(path).href })),
+    }));
+    const [c, s] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(s), client.connect(c)]);
+    return {
+      client,
+      setRoots: async (next: string[]) => {
+        roots = next;
+        await client.sendRootsListChanged();
+        await new Promise((r) => setTimeout(r, 20));
+      },
+    };
+  }
+  const dir = (name: string, files: Record<string, string>) => {
+    const path = mkdtempSync(join(tmpdir(), `jev-${name}-`));
+    for (const [file, text] of Object.entries(files)) writeFileSync(join(path, file), text);
+    return path;
+  };
+  const ask = (client: Client, file: string) =>
+    client.callTool({
+      name: "jev_judge",
+      arguments: {
+        source: { file },
+        questions: [{ id: "q", type: "noul", question: "Is it ok?" }],
+      },
+    });
+
+  it("reads from every root the client reports, first match winning", async () => {
+    const a = dir("a", { "one.log": "from a\n", "both.log": "a wins\n" });
+    const b = dir("b", { "two.log": "from b\n", "both.log": "b loses\n" });
+    const launch = dir("launch", { "three.log": "launch dir\n" });
+    const { client } = await withRoots([a, b], launch);
+    expect((await ask(client, "one.log")).isError).toBeFalsy();
+    expect((await ask(client, "two.log")).isError).toBeFalsy();
+    const both = JSON.parse(((await ask(client, "both.log")).content as { text: string }[])[0].text);
+    expect(both.source.origin).toBe("both.log");
+    // The launch directory is not in scope once the client names its roots.
+    expect((await ask(client, "three.log")).isError).toBe(true);
+  });
+
+  it("follows a roots change", async () => {
+    const a = dir("a", { "one.log": "x\n" });
+    const b = dir("b", { "two.log": "y\n" });
+    const { client, setRoots } = await withRoots([a], a);
+    expect((await ask(client, "two.log")).isError).toBe(true);
+    await setRoots([a, b]);
+    expect((await ask(client, "two.log")).isError).toBeFalsy();
+  });
+
+  it("falls back to the launch directory when the client has no roots", async () => {
+    const launch = dir("launch", { "x.log": "ok\n" });
+    const server = createServer(new MockBackend(), { root: launch, env: {} });
+    const client = new Client({ name: "test-client", version: "0.0.0" });
+    const [c, s] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(s), client.connect(c)]);
+    expect((await ask(client, "x.log")).isError).toBeFalsy();
   });
 });

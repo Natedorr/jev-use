@@ -22,8 +22,13 @@ const SOURCE_OVERHEAD_CHARS = 300;
 
 export interface ToolContext {
   backend: JevBackend;
-  /** Where relative `source` paths resolve, and the boundary they may not leave. */
+  /** The directory the server started in: the scope when the client reports no roots. */
   root: string;
+  /**
+   * Where relative `source` paths resolve, and the boundary they may not leave:
+   * the client's MCP roots, else just `root`.
+   */
+  listRoots: () => Promise<string[]>;
   env: Record<string, string | undefined>;
 }
 
@@ -101,7 +106,7 @@ export async function resolveForCall(
   if (!source) return null;
   const profile = limitsFor(ctx, model).limits.profile!;
   return resolveSource(source, {
-    root: ctx.root,
+    roots: await ctx.listRoots(),
     allowPaths: allowedPaths(ctx.env),
     redact: !isLocalBackend(ctx.env),
     // Room for the framing text, the source header and the cut marker too.

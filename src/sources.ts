@@ -32,8 +32,8 @@ export type Source = {
 };
 
 export interface SourceContext {
-  /** Relative paths resolve here, and paths may not leave it. */
-  root: string;
+  /** Relative paths resolve against these in order, and paths may not leave them. */
+  roots: string[];
   /** Extra directories paths may live in (`JEV_ALLOW_PATHS`). */
   allowPaths?: string[];
   /** Redact credentials from the text — set when the backend is remote. */
@@ -117,27 +117,39 @@ function within(parent: string, child: string): boolean {
   return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
 }
 
-/** Resolve `file` and refuse it unless it really lives under an allowed root. */
-async function scopedPath(file: string, ctx: SourceContext): Promise<string> {
-  const candidate = resolve(ctx.root, file);
-  let real: string;
-  try {
-    real = await realpath(candidate);
-  } catch {
-    throw new SourceError(`Cannot read ${file}: no such file.`);
+/**
+ * Resolve `file` and refuse it unless it really lives under an allowed root.
+ * A relative path is tried against each root in turn; the first that has the
+ * file wins.
+ */
+async function scopedPath(
+  file: string,
+  ctx: SourceContext,
+): Promise<{ path: string; root: string | undefined }> {
+  const candidates = isAbsolute(file) ? [file] : ctx.roots.map((root) => resolve(root, file));
+  let real: string | undefined;
+  for (const candidate of candidates) {
+    try {
+      real = await realpath(candidate);
+      break;
+    } catch {
+      // try the next root
+    }
   }
-  const roots = [ctx.root, ...(ctx.allowPaths ?? [])];
-  for (const root of roots) {
+  if (real === undefined) throw new SourceError(`Cannot read ${file}: no such file.`);
+  for (const root of [...ctx.roots, ...(ctx.allowPaths ?? [])]) {
     let realRoot: string;
     try {
       realRoot = await realpath(resolve(root));
     } catch {
       continue;
     }
-    if (within(realRoot, real)) return real;
+    if (within(realRoot, real)) {
+      return { path: real, root: ctx.roots.includes(root) ? realRoot : undefined };
+    }
   }
   throw new SourceError(
-    `${file} is outside the allowed paths (${ctx.root}); set JEV_ALLOW_PATHS to widen the scope.`,
+    `${file} is outside the allowed paths (${ctx.roots.join(", ")}); set JEV_ALLOW_PATHS to widen the scope.`,
   );
 }
 
@@ -299,6 +311,7 @@ export async function resolveSource(
   src: Source,
   ctx: SourceContext,
 ): Promise<Resolved> {
+  if (ctx.roots.length === 0) throw new SourceError("No root directory to read from.");
   if (!src || typeof src.file !== "string" || !src.file) {
     throw new SourceError("source needs a `file`.");
   }
@@ -308,7 +321,7 @@ export async function resolveSource(
     throw new SourceError("Give head or tail, not both.");
   }
 
-  const path = await scopedPath(src.file, ctx);
+  const { path, root } = await scopedPath(src.file, ctx);
   if (!(await stat(path)).isFile()) throw new SourceError(`${src.file} is not a file.`);
   await refuseBinary(path, src.file);
 
@@ -335,7 +348,7 @@ export async function resolveSource(
   }
   if (ctx.redact) text = redactSecrets(text);
 
-  const parts = [relative(ctx.root, path) || src.file];
+  const parts = [(root && relative(root, path)) || path];
   if (src.lines) parts.push(`lines ${src.lines.trim()}`);
   if (src.grep !== undefined) {
     parts.push(`grep /${src.grep}/` + (src.context ? ` ±${src.context}` : ""));

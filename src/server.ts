@@ -13,6 +13,8 @@
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { RootsListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
+import { fileURLToPath } from "node:url";
 import { effectiveEnv } from "./config.js";
 import type { JevBackend } from "./backends/types.js";
 import { registerGate } from "./tools/gate.js";
@@ -28,9 +30,31 @@ export function createServer(
   options: { root?: string; env?: Record<string, string | undefined> } = {},
 ): McpServer {
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
+  const fallback = options.root ?? process.cwd();
+  let cached: string[] | undefined;
+  server.server.setNotificationHandler(RootsListChangedNotificationSchema, () => {
+    cached = undefined;
+  });
+  /**
+   * The client's roots when it offers them, else the launch directory. Asked
+   * lazily — the handshake must be done — and cached until the client says
+   * they changed. A failed ask falls back without caching.
+   */
+  const listRoots = async (): Promise<string[]> => {
+    if (cached) return cached;
+    if (!server.server.getClientCapabilities()?.roots) return (cached = [fallback]);
+    try {
+      const { roots } = await server.server.listRoots();
+      const paths = roots.filter((r) => r.uri.startsWith("file:")).map((r) => fileURLToPath(r.uri));
+      return (cached = paths.length > 0 ? paths : [fallback]);
+    } catch {
+      return [fallback];
+    }
+  };
   const ctx: ToolContext = {
     backend,
-    root: options.root ?? process.cwd(),
+    root: fallback,
+    listRoots,
     env: options.env ?? effectiveEnv(),
   };
   registerJudge(server, ctx);
