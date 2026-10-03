@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import { MockBackend } from "../src/backends/mock.js";
 import {
   ESTIMATED_CONFIDENCE_THRESHOLD,
+  estimateTokens,
   REPORTED_CONFIDENCE_THRESHOLD,
 } from "../src/protocol.js";
 import { createServer } from "../src/server.js";
@@ -214,5 +215,39 @@ describe("source on jev_judge", () => {
     expect(parsed.source.truncated).toBe(true);
     expect(parsed.verdicts[0].reason).not.toBe("oversized");
     expect(seen[0].length).toBeLessThan(32_000);
+  });
+});
+
+describe("source on jev_gate", () => {
+  it("leaves room for the action and the gate question in nimble's budget", async () => {
+    const backend = new MockBackend({
+      gate: { answer: "allow", distribution: { allow: 0.95, deny: 0.05 }, confidence: 0.95 },
+    });
+    const seen: string[] = [];
+    const original = backend.judge.bind(backend);
+    backend.judge = async (request) => {
+      seen.push(String(request.state));
+      return original(request);
+    };
+    const root = mkdtempSync(join(tmpdir(), "jev-gate-"));
+    writeFileSync(join(root, "run.log"), "x".repeat(100_000));
+    const server = createServer(backend, { root, env: { JEV_MODEL: "nimble" } });
+    const client = new Client({ name: "test-client", version: "0.0.0" });
+    const [c, s] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(s), client.connect(c)]);
+
+    const res = await client.callTool({
+      name: "jev_gate",
+      arguments: {
+        state: "deploying",
+        source: { file: "run.log" },
+        tool: "Bash",
+        input: "y".repeat(6_000),
+      },
+    });
+    const parsed = JSON.parse((res.content as { text: string }[])[0].text);
+    expect(parsed.decision).toBe("allow");
+    expect(parsed.source.truncated).toBe(true);
+    expect(estimateTokens(seen[0])).toBeLessThan(8_192 - 512);
   });
 });

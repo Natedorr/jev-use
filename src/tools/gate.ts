@@ -10,6 +10,9 @@ import {
   type ToolContext,
 } from "./context.js";
 
+/** The gate question and its two option texts, plus the action header lines. */
+const GATE_QUESTION_CHARS = 700;
+
 export function registerGate(server: McpServer, ctx: ToolContext): void {
   server.registerTool(
     "jev_gate",
@@ -42,7 +45,10 @@ export function registerGate(server: McpServer, ctx: ToolContext): void {
     },
     async ({ state, source, tool, input, description, confidence_threshold, model }) => {
       try {
-        const resolved = await resolveForCall(ctx, source, model, [], state);
+        // The action and the gate question are added after the source resolves,
+        // so their size comes out of the source's budget.
+        const reserve = GATE_QUESTION_CHARS + tool.length + input.length + (description?.length ?? 0);
+        const resolved = await resolveForCall(ctx, source, model, [], state, reserve);
         const { limits } = limitsFor(ctx, model);
         const result = await gate(
           ctx.backend,

@@ -52,6 +52,18 @@ describe("resolveSource", () => {
     );
   });
 
+  it("accepts a directory whose name merely starts with two dots", async () => {
+    mkdirSync(join(root, "..cache"), { recursive: true });
+    writeFileSync(join(root, "..cache", "x.txt"), "inside\n");
+    const got = await resolveSource({ file: "..cache/x.txt" }, ctx);
+    expect(got.text).toBe("inside");
+  });
+
+  it("stops at head lines even with grep context gaps", async () => {
+    const got = await resolveSource({ file: "app.log", grep: "ERROR", context: 1, head: 3 }, ctx);
+    expect(got.text).toBe("ok\nERROR boom\nafter");
+  });
+
   it("refuses a symlink that escapes the root", async () => {
     const outside = mkdtempSync(join(tmpdir(), "jev-outside-"));
     writeFileSync(join(outside, "private.txt"), "nope\n");

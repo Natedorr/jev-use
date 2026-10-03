@@ -11,7 +11,7 @@
 
 import { createReadStream } from "node:fs";
 import { open, realpath, stat } from "node:fs/promises";
-import { delimiter, isAbsolute, relative, resolve } from "node:path";
+import { delimiter, isAbsolute, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline";
 import { effectiveEnv } from "./config.js";
 import { redactSecrets } from "./redact.js";
@@ -114,7 +114,7 @@ export function isLocalBackend(
 
 function within(parent: string, child: string): boolean {
   const rel = relative(parent, child);
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+  return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
 }
 
 /** Resolve `file` and refuse it unless it really lives under an allowed root. */
@@ -229,16 +229,20 @@ async function streamLines(
   const before: string[] = [];
   let afterLeft = 0;
   let lastKept = 0;
+  let keptLines = 0;
   let gap = false;
 
   const keep = (line: string, number: number): void => {
     if (gap && kept.length > 0 && number > lastKept + 1) kept.push("--");
     gap = false;
     kept.push(line);
+    keptLines++;
     keptChars += line.length + 1;
     lastKept = number;
     if (tail !== undefined && kept.length > tail) {
-      keptChars -= kept.shift()!.length + 1;
+      const dropped = kept.shift()!;
+      keptChars -= dropped.length + 1;
+      if (dropped !== "--") keptLines--;
     }
   };
 
@@ -275,7 +279,7 @@ async function streamLines(
       // A keep-the-head selection stops as soon as it has enough; a tail keeps
       // rolling, bounded by its line count.
       if (tail === undefined) {
-        if (head !== undefined && kept.filter((l) => l !== "--").length >= head) break;
+        if (head !== undefined && keptLines >= head) break;
         if (keptChars > maxChars) {
           capped = true;
           break;

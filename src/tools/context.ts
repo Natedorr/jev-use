@@ -95,6 +95,8 @@ export async function resolveForCall(
   model: string | undefined,
   questions: Question[],
   framing = "",
+  /** Characters the caller adds around the state once this resolves (the gate's action and question). */
+  reserveChars = 0,
 ): Promise<Resolved | null> {
   if (!source) return null;
   const profile = limitsFor(ctx, model).limits.profile!;
@@ -103,7 +105,7 @@ export async function resolveForCall(
     allowPaths: allowedPaths(ctx.env),
     redact: !isLocalBackend(ctx.env),
     // Room for the framing text, the source header and the cut marker too.
-    maxChars: Math.max(0, stateBudget(profile, questions) * 4 - framing.length - SOURCE_OVERHEAD_CHARS),
+    maxChars: Math.max(0, stateBudget(profile, questions) * 4 - framing.length - reserveChars - SOURCE_OVERHEAD_CHARS),
   });
 }
 
