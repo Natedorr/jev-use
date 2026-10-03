@@ -33,6 +33,8 @@ interface DecisionsResponse {
 
 export class OpenRouterBackend implements JevBackend {
   readonly name = "openrouter";
+  /** The decisions endpoint documents no image field, so none is sent. */
+  readonly supportsImages = false;
 
   constructor(private readonly options: OpenRouterOptions) {}
 

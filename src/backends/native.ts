@@ -19,6 +19,8 @@ export interface NativeBody {
   model: string;
   state: State;
   questions: Record<string, NativeWireQuestion>;
+  /** Base64 images shared by all questions; present only when given. */
+  images?: string[];
 }
 
 /** Translate one question into the native dialect. */
@@ -56,6 +58,7 @@ export function toNativeBody(
   state: State,
   questions: (Question & { id: string })[],
   model: string,
+  images?: string[],
 ): NativeBody {
   return {
     model,
@@ -63,6 +66,7 @@ export function toNativeBody(
     questions: Object.fromEntries(
       questions.map((question) => [question.id, toNativeQuestion(question)]),
     ),
+    ...(images?.length ? { images } : {}),
   };
 }
 

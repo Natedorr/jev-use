@@ -39,7 +39,19 @@ export async function judge(
   request: JudgeRequest,
   limits?: ScreenLimits,
 ): Promise<JudgeResult> {
-  const screened = screenQuestions(request.state, request.questions, limits);
+  const images = request.images ?? [];
+  const screened = screenQuestions(request.state, request.questions, {
+    ...limits,
+    ...(images.length
+      ? {
+          images: {
+            count: images.length,
+            base64Bytes: images.reduce((sum, image) => sum + image.length, 0),
+            backendVision: backend.supportsImages !== false,
+          },
+        }
+      : {}),
+  });
 
   const verdicts: Verdict[] = new Array(request.questions.length);
   for (const handedBack of screened.handedBack) {
@@ -56,6 +68,7 @@ export async function judge(
         state: request.state,
         questions: screened.sendable.map((sendable) => sendable.question),
         model: request.model,
+        ...(images.length ? { images } : {}),
       });
       model = response.model ?? model;
       latencyMs = response.latencyMs;

@@ -110,7 +110,7 @@ export default function (pi: PiExtensionAPI): void {
       "Batch quick judgment questions (noul/choice/score) about one state to Jev — " +
       "~100ms, calibrated probabilities. Batch everything about one state into one call. " +
       "Verdicts with escalate:true are handed back to you (reason: writing | " +
-      "open_ended | oversized | unsure | unreachable).",
+      "open_ended | oversized | no_vision | unsure | unreachable).",
     parameters: {
       type: "object",
       properties: {

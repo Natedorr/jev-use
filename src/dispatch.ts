@@ -31,6 +31,12 @@ export interface ScreenLimits {
    * counts and the request body. `maxStateTokens` still wins when given.
    */
   profile?: ModelProfile;
+  /**
+   * Images riding with the call. Handed back as `no_vision` when the model or
+   * the backend cannot take them; their base64 size counts toward the model's
+   * body limit.
+   */
+  images?: { count: number; base64Bytes: number; backendVision: boolean };
 }
 
 /** One question handed back before the call, with the verdict that says why. */
@@ -94,14 +100,29 @@ export function screenQuestions(
     ),
     oversized: true,
   });
+  if (limits.images && limits.images.count > 0) {
+    const { backendVision } = limits.images;
+    if (!backendVision || (profile && !profile.vision)) {
+      const reason = !backendVision
+        ? "This backend has no documented image support; judge the screenshot yourself or use the typesafe backend."
+        : "This model cannot read images: set JEV_VISION_MODEL=clef-flash (the only vision model jev-use knows, on the typesafe backend) or pass `model` as clef-flash.";
+      return {
+        sendable: [],
+        handedBack: identified.map((question, index) => handBack(question, index, "no_vision", reason)),
+      };
+    }
+  }
   const narrow =
     "use `source.tail`/`grep` to narrow it, `jev_filter` for many items, or take the question over yourself";
 
   if (profile?.maxBodyBytes !== undefined) {
-    const bytes = Buffer.byteLength(JSON.stringify({ state, questions }));
+    const imageBytes = limits.images?.base64Bytes ?? 0;
+    const bytes = Buffer.byteLength(JSON.stringify({ state, questions })) + imageBytes;
     if (bytes > profile.maxBodyBytes) {
       return handAll(
-        `Request is ${bytes} bytes; the model accepts at most ${profile.maxBodyBytes}. Shrink the state: ${narrow}.`,
+        imageBytes > 0
+          ? `Request is ${bytes} bytes (images ${imageBytes}); the model accepts at most ${profile.maxBodyBytes}. Capture a smaller viewport or fewer images.`
+          : `Request is ${bytes} bytes; the model accepts at most ${profile.maxBodyBytes}. Shrink the state: ${narrow}.`,
       );
     }
   }

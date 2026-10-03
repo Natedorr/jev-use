@@ -1,10 +1,12 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { loadImages, MAX_IMAGES } from "../images.js";
 import { judge } from "../judge.js";
 import {
   ESTIMATED_CONFIDENCE_THRESHOLD,
   REPORTED_CONFIDENCE_THRESHOLD,
 } from "../protocol.js";
+import { allowedPaths } from "../sources.js";
 import {
   errorResult,
   joinState,
@@ -37,7 +39,10 @@ export function registerJudge(server: McpServer, ctx: ToolContext): void {
         "question is handed back to you: writing/open_ended = structurally yours, " +
         "oversized = the state is too big to judge, " +
         "unsure = Jev's answer is only a prior (it is still included) — decide yourself, " +
-        "unreachable = Jev is down, proceed without it.",
+        "unreachable = Jev is down, proceed without it, " +
+        "no_vision = the model or backend cannot read images (set JEV_VISION_MODEL=clef-flash). " +
+        "To check a screenshot without reading it into your context, pass its path in `images`: " +
+        "the server reads and encodes it, and only the verdict comes back.",
       inputSchema: {
         state: z
           .string()
@@ -65,23 +70,44 @@ export function registerJudge(server: McpServer, ctx: ToolContext): void {
               `confidence Jev reported, ${ESTIMATED_CONFIDENCE_THRESHOLD} for one jev-use estimated ` +
               "from the answer's distribution (each verdict says which, in confidenceFrom).",
           ),
+        images: z
+          .array(z.string())
+          .max(MAX_IMAGES)
+          .optional()
+          .describe(
+            "Paths of PNG/JPEG/WebP files (relative to the server's working directory) judged " +
+              "together with the state, by every question. Paths only, never base64 or the image " +
+              "itself: the server reads the file so the pixels never enter this conversation. " +
+              "Needs a vision model (JEV_VISION_MODEL). Screenshots leave the machine when the " +
+              "backend is remote, and are not redacted.",
+          ),
         model: z.string().optional().describe("Backend model override, e.g. jev-latest."),
       },
     },
-    async ({ state, source, questions, confidence_threshold, model }) => {
-      if (state === undefined && !source) {
-        return errorResult("Give `state`, `source`, or both — there is nothing to judge.");
+    async ({ state, source, questions, confidence_threshold, images, model }) => {
+      if (state === undefined && !source && !images?.length) {
+        return errorResult("Give `state`, `source`, `images`, or a mix — there is nothing to judge.");
       }
       try {
-        const resolved = await resolveForCall(ctx, source, model, questions, state);
-        const { limits } = limitsFor(ctx, model);
+        // A call with images and no explicit model goes to the vision model.
+        const effective = model ?? (images?.length ? ctx.env.JEV_VISION_MODEL || undefined : undefined);
+        const { limits } = limitsFor(ctx, effective);
+        // When the model or backend cannot take images, skip reading the files: empty
+        // placeholders still make the screen hand every question back as no_vision.
+        const canSeeImages = limits.profile?.vision === true && ctx.backend.supportsImages !== false;
+        const loaded =
+          images?.length && canSeeImages
+            ? await loadImages(images, { roots: await ctx.listRoots(), allowPaths: allowedPaths(ctx.env) })
+            : null;
+        const resolved = await resolveForCall(ctx, source, effective, questions, state);
         const result = await judge(
           ctx.backend,
           {
             state: joinState(state, resolved),
             questions,
             confidenceThreshold: confidence_threshold,
-            model,
+            model: effective,
+            ...(loaded ? { images: loaded.data } : images?.length ? { images: images.map(() => "") } : {}),
           },
           limits,
         );
@@ -89,11 +115,11 @@ export function registerJudge(server: McpServer, ctx: ToolContext): void {
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(
-                resolved
-                  ? { ...result, source: { origin: resolved.origin, truncated: resolved.truncated } }
-                  : result,
-              ),
+              text: JSON.stringify({
+                ...result,
+                ...(resolved ? { source: { origin: resolved.origin, truncated: resolved.truncated } } : {}),
+                ...(loaded ? { images: loaded.origins } : {}),
+              }),
             },
           ],
         };

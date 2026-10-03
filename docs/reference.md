@@ -100,6 +100,7 @@ actually reached Jev.
 | `writing` | pre-call | the step must produce new text/code — structurally the LLM's |
 | `open_ended` | pre-call | not expressible as noul/choice/score (nothing to enumerate) |
 | `oversized` | pre-call | the state exceeds ~30k tokens — shrink it or take the questions over |
+| `no_vision` | pre-call | `jev_judge` got `images` but the model or backend cannot read them — set `JEV_VISION_MODEL=clef-flash` (typesafe backend only) |
 | `unsure` | post-call | answer too flat to act on; it stays in `answer` as a prior |
 | `unreachable` | on failure | Jev unreachable — proceed as if it didn't exist |
 
@@ -179,6 +180,7 @@ are overridable per call: `jev.judge(state, questions, { model })`.
 | `JEV_BACKEND` | auto-detect | `typesafe` \| `openrouter` \| `vercel` \| `mock` |
 | `TYPESAFE_API_KEY` / `OPENROUTER_API_KEY` / `AI_GATEWAY_API_KEY` | — | provider credential; auto-detected in this order |
 | `JEV_MODEL` | provider default (`jev-latest`) | model override |
+| `JEV_VISION_MODEL` | — | model used when a `jev_judge` call has `images` and names no `model` (e.g. `clef-flash`) |
 | `JEV_GATE_THRESHOLD` | per confidence source (`0.5` / `0.4`) | hook-gate escalation threshold, for both sources at once |
 
 Provider dialects: TypeSafe and OpenRouter share the native wire shape

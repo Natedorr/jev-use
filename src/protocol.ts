@@ -18,6 +18,8 @@
  *     (no enumerable options, no ordered levels). Decided BEFORE calling.
  *   - oversized   : the state itself does not fit in Jev's context. Also
  *     decided BEFORE calling, for the whole batch.
+ *   - no_vision   : the call carries images and the model or backend cannot read
+ *     them. Decided BEFORE calling, for the whole batch.
  *   - unsure      : Jev answered but the distribution is too flat to act on.
  *     Decided AFTER calling, against the threshold for that answer's
  *     confidence source (see `ConfidenceSource`).
@@ -38,6 +40,7 @@ export type EscalationReason =
   | "writing"
   | "open_ended"
   | "oversized"
+  | "no_vision"
   | "unsure"
   | "unreachable";
 
@@ -129,6 +132,8 @@ export interface JudgeRequest {
   confidenceThreshold?: number;
   /** Backend model id override, e.g. "jev-latest". */
   model?: string;
+  /** Base64 PNG/JPEG/WebP (no data-URL prefix) judged jointly with the state. */
+  images?: string[];
 }
 
 /** One verdict per question — the unit that crosses the handoff boundary. */

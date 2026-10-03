@@ -30,6 +30,8 @@ export interface BackendRequest {
   /** Already screened; ids resolved and unique. */
   questions: (Question & { id: string })[];
   model?: string;
+  /** Base64 PNG/JPEG/WebP, shared by every question. Only on vision-capable backends. */
+  images?: string[];
 }
 
 /** One batch as an adapter answers it. */
@@ -45,6 +47,8 @@ export interface BackendResponse {
 export interface JevBackend {
   /** Short id, surfaced in results: "typesafe" | "openrouter" | ... */
   readonly name: string;
+  /** False when the backend has no documented image wire; unset means it can take images. */
+  readonly supportsImages?: boolean;
   judge(request: BackendRequest): Promise<BackendResponse>;
 }
 

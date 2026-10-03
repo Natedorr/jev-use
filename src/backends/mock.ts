@@ -26,10 +26,14 @@ export interface MockScript {
 export class MockBackend implements JevBackend {
   readonly name = "mock";
 
+  /** Image count of the most recent request — lets tests see the wire round trip. */
+  lastImageCount = 0;
+
   constructor(private readonly script: MockScript = {}) {}
 
   async judge(request: BackendRequest): Promise<BackendResponse> {
     const started = Date.now();
+    this.lastImageCount = request.images?.length ?? 0;
     const answers = request.questions.map(
       (question, index) =>
         this.script[question.id] ?? synthesize(request, question, index),
