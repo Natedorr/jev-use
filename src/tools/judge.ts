@@ -12,7 +12,7 @@ import {
   errorResult,
   joinState,
   limitsFor,
-  questionsInput,
+  questionsInputFor,
   resolveForCall,
   sourceShape,
   type ToolContext,
@@ -46,7 +46,7 @@ export function registerJudge(server: McpServer, ctx: ToolContext): void {
               "use `source` instead. Give `state`, `source`, or both (state then frames the source).",
           ),
         source: sourceShape.optional(),
-        questions: questionsInput,
+        questions: questionsInputFor(ctx.env),
         confidence_threshold: z
           .number()
           .min(0)

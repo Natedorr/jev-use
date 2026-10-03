@@ -184,9 +184,24 @@ Precedence on a check: `fail_if` > `until` > `exited` > `escalate`.
 | --- | --- | --- | --- |
 | hosted `jev-*` | 64k (≤ 30k state) | no | the default |
 | `nimble` (local) | 8,192, shared by state and the whole question set | no | ≤ 64 questions, ≤ 26 options, 64 KB body; keep slices tight |
-| `clef-flash` | as hosted | yes | route images here with `JEV_VISION_MODEL`. No body limit found on local Ollama; the server refuses images over 32 MB and more than 8 per call |
+| `clef`, `clef-flash` | as hosted | yes | ≤ 64 questions, ≤ 26 options; route images here with `JEV_VISION_MODEL`. No body limit found on local Ollama; the server refuses images over 32 MB and more than 8 per call |
 
-Unknown models get the hosted numbers; `JEV_CONTEXT_TOKENS` overrides their
+The table lives in `models.json` at the package root, matched by longest model
+name prefix. To add a model or change a number, drop a file of the same shape at
+`~/.config/jev-use/models.json` (or point `JEV_MODELS_FILE` at one); its entries
+merge over the bundled ones field by field, so you only restate what changes:
+
+```json
+{ "models": { "my-model": { "contextTokens": 4096, "vision": true, "maxQuestions": 1 },
+              "nimble":   { "maxQuestions": 8 } } }
+```
+
+Fields: `contextTokens`, `maxQuestions`, `maxOptions`, `maxBodyBytes`, `vision`,
+`questionSetInPrompt`; omit a limit for none. Unknown fields are ignored, and a
+broken file is skipped. The `JEV_VISION`, `JEV_MAX_*` env settings below still
+win over the file.
+
+Unknown models get the hosted defaults; `JEV_CONTEXT_TOKENS` overrides their
 window. OpenRouter and Vercel backends cannot take images and return `no_vision`.
 
 ## The verdict contract
@@ -284,6 +299,12 @@ are overridable per call: `jev.judge(state, questions, { model })`.
 | `JEV_MODEL` | provider default (`jev-latest`) | model override |
 | `JEV_VISION_MODEL` | — | model used when a `jev_judge` call has `images` and names no `model` (e.g. `clef-flash`) |
 | `JEV_CONTEXT_TOKENS` | model profile | context window for a model jev-use has no profile for |
+| `JEV_MODELS_FILE` | `~/.config/jev-use/models.json` | extra or overriding model profiles, merged over the bundled `models.json` |
+| `JEV_VISION` | model profile | `on` \| `off`: force whether the model can read images, for a model the profile has wrong or does not know |
+| `JEV_MAX_QUESTIONS` | model profile (64 on Ollama models) | questions per call; `1` forces one question per call, and extras come back as `oversized` to send again |
+| `JEV_MAX_OPTIONS` | model profile (26; 24 for tev1) | options per choice or score question |
+| `JEV_MAX_BODY_BYTES` | model profile | largest request body the server accepts |
+| `JEV_QUESTIONS_INPUT` | `any` | how `jev_judge` advertises `questions` to the calling model: `any` (array, one question, JSON string or id map), `array`, `single` (one question object), or `string` (a JSON string). Use a single plain shape for models whose tool-calling chokes on unions; every spelling is still accepted |
 | `JEV_ALLOW_PATHS` | — | extra directories (platform path delimiter) that `source`, `images`, `jev_filter` and `jev_wait` may read, beyond the client's MCP roots |
 | `JEV_FILTER_CONCURRENCY` | `4` | parallel Jev calls inside one `jev_filter` |
 | `JEV_GATE_THRESHOLD` | per confidence source (`0.5` / `0.4`) | hook-gate escalation threshold, for both sources at once |

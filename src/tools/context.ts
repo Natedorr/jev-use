@@ -70,17 +70,40 @@ export const questionShape = z.object({
  * string, or an id -> question map are accepted too (see `normalizeQuestions`)
  * because not every model can emit an array argument.
  */
-export const questionsInput = z
-  .union([
-    z.array(z.union([questionShape, z.record(z.string(), z.unknown()), z.string()])).min(1),
-    questionShape,
-    z.string(),
-    z.record(z.string(), z.unknown()),
-  ])
-  .describe(
-    "All questions you have about this state - batch them. An array of {type, question, options|levels|criteria}; " +
-      "if you cannot send an array, send one question object or a JSON string of the array.",
-  );
+const questionsDescription =
+  "All questions you have about this state - batch them. An array of {type, question, options|levels|criteria}; " +
+  "if you cannot send an array, send one question object or a JSON string of the array.";
+
+/**
+ * The `questions` schema advertised to the caller, chosen by
+ * `JEV_QUESTIONS_INPUT`. The default `any` is a union, which some models'
+ * tool-calling cannot read; the others advertise one plain shape. Whatever is
+ * advertised, `normalizeQuestions` still accepts every spelling.
+ *
+ *   any     array | one question | JSON string | id -> question map (default)
+ *   array   an array of questions only
+ *   single  one question object per call (pair with JEV_MAX_QUESTIONS=1)
+ *   string  a JSON string of the array
+ */
+export function questionsInputFor(env: Record<string, string | undefined>): z.ZodTypeAny {
+  switch (env.JEV_QUESTIONS_INPUT?.trim().toLowerCase()) {
+    case "array":
+      return z.array(questionShape).min(1).describe("All questions you have about this state - batch them.");
+    case "single":
+      return questionShape.describe("The one question to answer about this state. One question per call.");
+    case "string":
+      return z.string().describe("A JSON string of an array of {type, question, options|levels|criteria}.");
+    default:
+      return z
+        .union([
+          z.array(z.union([questionShape, z.record(z.string(), z.unknown()), z.string()])).min(1),
+          questionShape,
+          z.string(),
+          z.record(z.string(), z.unknown()),
+        ])
+        .describe(questionsDescription);
+  }
+}
 
 /** The `source` argument as MCP callers send it. */
 export const sourceShape = z

@@ -352,6 +352,9 @@ backends: typesafe (TYPESAFE_API_KEY) | openrouter (OPENROUTER_API_KEY)
 MCP tools read: JEV_VISION_MODEL (model for calls with images, e.g. clef-flash),
 JEV_CONTEXT_TOKENS (window for unprofiled models), JEV_ALLOW_PATHS (extra readable
 directories), JEV_FILTER_CONCURRENCY (parallel calls in jev_filter).
+Model limits, forced when a model outgrows the built-in profile: JEV_VISION=on|off,
+JEV_MAX_QUESTIONS, JEV_MAX_OPTIONS, JEV_MAX_BODY_BYTES. How jev_judge advertises
+"questions" to the caller: JEV_QUESTIONS_INPUT=any|array|single|string.
 
 hook gate also reads two env vars: JEV_GATE_THRESHOLD, the confidence to
 escalate below — unset, each answer's confidence source decides, and

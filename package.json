@@ -48,6 +48,7 @@
     "harness",
     "skills",
     "docs",
+    "models.json",
     ".mcp.json",
     ".claude-plugin",
     "examples",
