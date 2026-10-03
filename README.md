@@ -50,6 +50,30 @@ the routing skill and the PreToolUse gate:
 [harness/claude-code](harness/claude-code/README.md) ·
 [harness/codex](harness/codex/README.md).
 
+## Configuration
+
+The MCP server also reads `~/.config/jev-use/config.json` (flat keys named
+after the env vars):
+
+```json
+{
+  "JEV_BACKEND": "typesafe",
+  "TYPESAFE_BASE_URL": "https://api.example.com",
+  "JEV_MODEL": "your-model",
+  "TYPESAFE_API_KEY": "your-key",
+  "JEV_TIMEOUT_MS": "60000"
+}
+```
+
+Precedence: real environment variables > config file > code defaults.
+A missing or broken file is ignored. This matters for SDK-launched agents
+that don't inherit the agent's process env (Claude Code subagents, Codex
+SDK, headless runners) — the file fills what the environment lost.
+`JEV_TIMEOUT_MS` caps each attempt; default 60 s, since small models on
+local Ollama can need ~30 s cold load on the first call. For pi, the same
+env block goes in the `mcp.json` server entry — see
+[harness/pi-mcp](harness/pi-mcp/README.md).
+
 ## Use as a library
 
 `npm i jev-use` — zero runtime dependencies on the judgment path:
