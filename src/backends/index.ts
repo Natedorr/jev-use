@@ -5,6 +5,7 @@
  * own, so a missing key is a loud, named error instead of silent fakery.
  */
 
+import { effectiveEnv } from "../config.js";
 import { MockBackend } from "./mock.js";
 import { OpenRouterBackend } from "./openrouter.js";
 import { TypeSafeBackend } from "./typesafe.js";
@@ -30,7 +31,7 @@ export interface ResolvedBackend {
  */
 export function createBackend(
   name?: string,
-  env: Record<string, string | undefined> = process.env,
+  env: Record<string, string | undefined> = effectiveEnv(),
 ): ResolvedBackend {
   const requested = (name ?? env.JEV_BACKEND)?.toLowerCase();
 

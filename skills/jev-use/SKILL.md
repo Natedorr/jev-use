@@ -19,6 +19,38 @@ for. You stay the planner and the writer.
 | **Sitting in a file or tool output** | a script pipes the file to `jev-use judge` — the items never enter your context | same CLI, from the script, then act on the verdicts it prints |
 | **To be written by you** (new text, code, options you cannot enumerate) | yours | yours |
 
+## Argument shape (both lanes)
+
+Validated strictly — a wrong field name is a validation error, not a
+judgment. `state` is a string (or JSON object/array); `questions` is a
+list; each question has at minimum `type` and `question`:
+
+```jsonc
+{
+  "state": "string: all the facts the questions are about",
+  "questions": [
+    { "id": "my_tag",                    // optional, echoed back
+      "type": "noul",                    // "noul" | "choice" | "score"
+      "question": "Does X?" },           // REQUIRED — field is "question", not "text"
+    { "type": "choice", "question": "Which next?",
+      "options": { "a": "what a means", "b": "what b means" } },  // label->meaning, >=2
+    { "type": "score", "question": "How ready?",
+      "levels": ["broken", "rough", "shippable"] }               // ordered, >=2
+  ]
+}
+```
+
+Optional per question: `criteria` (noul only: what yes/no mean).
+Optional top level: `confidence_threshold` (escalate below it),
+`model` (backend override).
+
+**Backend limits (small local model via Ollama `/v1/systemone`):** up to 64
+questions per call; choice/score take 2–26 options/levels; state plus
+the whole question set is scored per question against the model's ~8k-token
+context, so keep `state` tight; questions are scored independently —
+enforce cross-answer consistency in code; add a "no match" option when
+no option may fit.
+
 ## Rules that make it pay off
 
 - **Route bulk data by reference.** When the items sit in a file or in tool

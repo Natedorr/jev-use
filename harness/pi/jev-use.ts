@@ -14,6 +14,7 @@
  */
 
 import { createBackend } from "../../src/backends/index.js";
+import { effectiveEnv } from "../../src/config.js";
 import type { JevBackend } from "../../src/backends/types.js";
 import { gate, judge } from "../../src/judge.js";
 import {
@@ -46,9 +47,16 @@ interface PiExtensionAPI {
 
 let resolved: JevBackend | undefined;
 
-/** The backend, resolved from the environment on first use and kept. */
+/**
+ * Backend comes from env, falling back to ~/.config/jev-use/config.json —
+ * real env vars always win (effectiveEnv() spreads the config file under
+ * process.env). This keeps SDK launches working when their process env is
+ * lost, and leaves the backend fully editable as plain data.
+ */
+
+/** The backend, resolved once on first use. */
 function backend(): JevBackend {
-  resolved ??= createBackend().backend;
+  resolved ??= createBackend(undefined, effectiveEnv()).backend;
   return resolved;
 }
 

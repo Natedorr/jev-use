@@ -1,16 +1,27 @@
 /** Shared HTTP plumbing for all remote backends: timeout, retry, errors. */
 
+import { effectiveEnv } from "../config.js";
 import { BackendError } from "./types.js";
 
 /** Transport knobs every remote backend accepts. */
 export interface HttpOptions {
-  /** Abort one attempt after this long. Default 10s. */
+  /** Abort one attempt after this long. Default 60s (JEV_TIMEOUT_MS or config). */
   timeoutMs?: number;
   /** Retries on 408/429/5xx and network failures. Default 2. */
   maxRetries?: number;
 }
 
-const DEFAULT_TIMEOUT_MS = 10_000;
+/**
+ * Default timeout. A small model on local Ollama needs ~30s cold load on
+ * the first call, so the default is 60s; tighten with JEV_TIMEOUT_MS (env
+ * or config file) when the backend is fast or remote.
+ */
+export function defaultTimeoutMs(): number {
+  const raw = effectiveEnv().JEV_TIMEOUT_MS;
+  const parsed = raw === undefined ? NaN : Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : 60_000;
+}
+
 const DEFAULT_MAX_RETRIES = 2;
 const RETRY_BASE_MS = 500;
 const RETRY_MAX_MS = 5_000;
@@ -27,7 +38,7 @@ export async function postJson(
   body: unknown,
   options: HttpOptions = {},
 ): Promise<unknown> {
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const timeoutMs = options.timeoutMs ?? defaultTimeoutMs();
   const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
 
   let lastError: BackendError | undefined;
