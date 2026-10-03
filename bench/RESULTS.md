@@ -315,3 +315,26 @@ Honest findings from these runs:
   goal-level `check` rejects the 1,809 km route at 0.33 (`unsure`), the fix
   is more text so the fields return to the LLM with the geocoder's answer as
   evidence, and the second attempt verifies at 0.94.
+
+# Bulk relevance: `jev_filter`
+
+2026-10-03 · local `nimble` on Ollama (``) · concurrency 4 · default excerpt (first 80 lines per file).
+
+Question over `src/**/*.ts` (26 files, 125,960 bytes): *"Does this file handle
+escalation reasons (why a question is handed back to the calling LLM)?"*,
+`return: "ranked"`, `top_k: 8`.
+
+| | |
+| --- | --- |
+| items judged | 26 (0 skipped) |
+| wall time | 33.5 s (about 1.3 s per item at concurrency 4) |
+| result returned to the agent | 510 bytes: 8 ranked `{item, p}` plus 3 escalated ids |
+| reading every candidate instead | 125,960 bytes (about 31k tokens), roughly 250x more |
+| top of the ranking | `protocol.ts` .999, `dispatch.ts` .988, `tools/judge.ts` .983, `index.ts` .968, `server.ts` .824; the rest below .26 |
+| escalated (unsure) | `jev.ts`, `judge.ts`, `tools/filter.ts` — the agent decides |
+
+Caveats: the five top hits are plausible, but `judge.ts` (where reasons are
+set) landed in `escalated` rather than the ranking, and the default
+`head: 80` excerpt means a file is judged on its opening lines only. For
+"does this file *contain* X" questions, pass `excerpt: { grep, context }`.
+Wall time is dominated by the model, not the file reads.

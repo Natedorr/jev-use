@@ -31,10 +31,10 @@ async function connectedClient(backend = new MockBackend()) {
 }
 
 describe("MCP server", () => {
-  it("exposes exactly jev_judge and jev_gate", async () => {
+  it("exposes exactly jev_judge, jev_gate and jev_filter", async () => {
     const client = await connectedClient();
     const tools = await client.listTools();
-    expect(tools.tools.map((t) => t.name).sort()).toEqual(["jev_gate", "jev_judge"]);
+    expect(tools.tools.map((t) => t.name).sort()).toEqual(["jev_filter", "jev_gate", "jev_judge"]);
   });
 
   /**

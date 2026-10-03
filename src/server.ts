@@ -17,6 +17,7 @@ import { RootsListChangedNotificationSchema } from "@modelcontextprotocol/sdk/ty
 import { fileURLToPath } from "node:url";
 import { effectiveEnv } from "./config.js";
 import type { JevBackend } from "./backends/types.js";
+import { registerFilter } from "./tools/filter.js";
 import { registerGate } from "./tools/gate.js";
 import { registerJudge } from "./tools/judge.js";
 import type { ToolContext } from "./tools/context.js";
@@ -59,5 +60,6 @@ export function createServer(
   };
   registerJudge(server, ctx);
   registerGate(server, ctx);
+  registerFilter(server, ctx);
   return server;
 }

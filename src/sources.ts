@@ -57,6 +57,14 @@ export class SourceError extends Error {
   }
 }
 
+/** A path that leaves the allowed roots — callers should refuse, not skip. */
+export class ScopeError extends SourceError {
+  constructor(message: string) {
+    super(message);
+    this.name = "ScopeError";
+  }
+}
+
 /** `JEV_ALLOW_PATHS`, split on the platform's path delimiter. */
 export function allowedPaths(
   env: Record<string, string | undefined> = effectiveEnv(),
@@ -122,7 +130,7 @@ function within(parent: string, child: string): boolean {
  * A relative path is tried against each root in turn; the first that has the
  * file wins.
  */
-async function scopedPath(
+export async function scopedPath(
   file: string,
   ctx: SourceContext,
 ): Promise<{ path: string; root: string | undefined }> {
@@ -148,12 +156,12 @@ async function scopedPath(
       return { path: real, root: ctx.roots.includes(root) ? realRoot : undefined };
     }
   }
-  throw new SourceError(
+  throw new ScopeError(
     `${file} is outside the allowed paths (${ctx.roots.join(", ")}); set JEV_ALLOW_PATHS to widen the scope.`,
   );
 }
 
-async function refuseBinary(path: string, name: string): Promise<void> {
+export async function refuseBinary(path: string, name: string): Promise<void> {
   const handle = await open(path, "r");
   try {
     const buffer = Buffer.alloc(8192);
@@ -165,6 +173,18 @@ async function refuseBinary(path: string, name: string): Promise<void> {
     }
   } finally {
     await handle.close();
+  }
+}
+
+/** Fail early on an excerpt that would fail for every item: a bad regex or lines range. */
+export function validateExcerpt(excerpt: Pick<Source, "grep" | "lines"> | undefined): void {
+  if (excerpt?.lines) parseRange(excerpt.lines);
+  if (excerpt?.grep !== undefined) {
+    try {
+      new RegExp(excerpt.grep);
+    } catch {
+      throw new SourceError(`grep is not a valid regex: ${excerpt.grep}`);
+    }
   }
 }
 
@@ -356,4 +376,53 @@ export async function resolveSource(
   if (head !== undefined) parts.push(`head ${head}`);
   if (tail !== undefined) parts.push(`tail ${tail}`);
   return { text, origin: parts.join(" "), truncated };
+}
+
+/** How a file splits into items: lines, non-empty JSONL records, or blank-line-separated blocks. */
+export type EachMode = "line" | "jsonl" | "block";
+
+/**
+ * Split one file into items, streaming, and stop as soon as more than `limit`
+ * exist (`over: true`) — a huge file is never read whole.
+ */
+export async function readItems(
+  file: string,
+  each: EachMode,
+  ctx: SourceContext,
+  limit: number,
+): Promise<{ items: string[]; over: boolean }> {
+  if (ctx.roots.length === 0) throw new SourceError("No root directory to read from.");
+  const { path } = await scopedPath(file, ctx);
+  if (!(await stat(path)).isFile()) throw new SourceError(`${file} is not a file.`);
+  await refuseBinary(path, file);
+
+  const items: string[] = [];
+  let block: string[] = [];
+  let over = false;
+  const push = (item: string): void => {
+    items.push(item);
+    if (items.length > limit) over = true;
+  };
+  const stream = createReadStream(path, { encoding: "utf8" });
+  const reader = createInterface({ input: stream, crlfDelay: Infinity });
+  try {
+    for await (const line of reader) {
+      if (each === "block") {
+        if (line.trim() === "") {
+          if (block.length > 0) push(block.join("\n"));
+          block = [];
+        } else block.push(line);
+      } else if (each === "line" || line.trim() !== "") {
+        push(line);
+      }
+      if (over) break;
+    }
+    if (!over && block.length > 0) push(block.join("\n"));
+  } finally {
+    reader.close();
+    stream.destroy();
+  }
+  // Trailing blank lines are not items.
+  if (!over && each === "line") while (items[items.length - 1] === "") items.pop();
+  return { items: items.slice(0, limit), over };
 }
