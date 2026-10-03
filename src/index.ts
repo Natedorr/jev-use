@@ -23,6 +23,11 @@ export type { CallOptions, JevOptions, Judgment, QuestionMap } from "./jev.js";
 
 export { check, pick, rate } from "./protocol.js";
 export { redactSecrets, REDACTED } from "./redact.js";
+
+export { profileFor } from "./models.js";
+export type { ModelProfile } from "./models.js";
+export { isLocalBackend, resolveSource, SourceError } from "./sources.js";
+export type { Resolved, Source, SourceContext } from "./sources.js";
 export { route } from "./dispatch.js";
 export type { Step, StepRoute } from "./dispatch.js";
 export type {

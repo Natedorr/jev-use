@@ -5,6 +5,9 @@
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MockBackend } from "../src/backends/mock.js";
 import {
@@ -127,5 +130,89 @@ describe("MCP server", () => {
       (res.content as { type: string; text: string }[])[0].text,
     );
     expect(parsed.decision).toBe("allow");
+  });
+});
+
+describe("source on jev_judge", () => {
+  /** A backend that records the state it was asked to judge. */
+  function recording(script = {}) {
+    const backend = new MockBackend(script);
+    const seen: string[] = [];
+    const original = backend.judge.bind(backend);
+    backend.judge = async (request) => {
+      seen.push(String(request.state));
+      return original(request);
+    };
+    return { backend, seen };
+  }
+
+  async function withFile(
+    content: string,
+    backend = new MockBackend(),
+    env: Record<string, string> = {},
+  ) {
+    const root = mkdtempSync(join(tmpdir(), "jev-server-"));
+    writeFileSync(join(root, "run.log"), content);
+    const server = createServer(backend, { root, env });
+    const client = new Client({ name: "test-client", version: "0.0.0" });
+    const [c, s] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(s), client.connect(c)]);
+    return client;
+  }
+
+  const askFailed = [{ id: "failed", type: "noul", question: "Did the run fail?" }];
+  const textOf = (res: unknown) =>
+    JSON.parse((res as { content: { text: string }[] }).content[0].text);
+
+  it("judges a file by reference and reports what was read", async () => {
+    const { backend, seen } = recording({ failed: { answer: 0.9 } });
+    const client = await withFile("step 1 ok\nstep 2 FAILED\n", backend);
+    const res = await client.callTool({
+      name: "jev_judge",
+      arguments: { source: { file: "run.log", tail: 1 }, questions: askFailed },
+    });
+    const parsed = textOf(res);
+    expect(parsed.verdicts[0].answer).toBe(0.9);
+    expect(parsed.source).toEqual({ origin: "run.log tail 1", truncated: false });
+    expect(seen[0]).toContain("step 2 FAILED");
+    expect(seen[0]).not.toContain("step 1 ok");
+  });
+
+  it("uses state as framing text when both are given", async () => {
+    const { backend, seen } = recording();
+    const client = await withFile("hello\n", backend);
+    await client.callTool({
+      name: "jev_judge",
+      arguments: { state: "CI log follows", source: { file: "run.log" }, questions: askFailed },
+    });
+    expect(seen[0]).toBe("CI log follows\n\n--- source: run.log ---\nhello");
+  });
+
+  it("errors when neither state nor source is given", async () => {
+    const client = await withFile("x\n");
+    const res = await client.callTool({ name: "jev_judge", arguments: { questions: askFailed } });
+    expect(res.isError).toBe(true);
+  });
+
+  it("returns an error, not a verdict, for a path outside the root", async () => {
+    const client = await withFile("x\n");
+    const res = await client.callTool({
+      name: "jev_judge",
+      arguments: { source: { file: "../nope.log" }, questions: askFailed },
+    });
+    expect(res.isError).toBe(true);
+  });
+
+  it("cuts a source to fit nimble's budget and says so", async () => {
+    const { backend, seen } = recording();
+    const client = await withFile("x".repeat(100_000), backend, { JEV_MODEL: "nimble" });
+    const res = await client.callTool({
+      name: "jev_judge",
+      arguments: { source: { file: "run.log" }, questions: askFailed },
+    });
+    const parsed = textOf(res);
+    expect(parsed.source.truncated).toBe(true);
+    expect(parsed.verdicts[0].reason).not.toBe("oversized");
+    expect(seen[0].length).toBeLessThan(32_000);
   });
 });
