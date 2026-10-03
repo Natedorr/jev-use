@@ -1,6 +1,6 @@
 ---
 name: jev-use
-description: Use before a step that is a decision, not writing: did a command, build or test run succeed (log, test output, build output); triaging or filtering MANY items (which of these files or grep hits matter, is it relevant, flaky vs real failures); waiting for a background process or dev server to be ready or stuck; checking a screenshot; or gating one risky command. Jev reads the file, log, process or image itself and returns a small typed verdict, so the data never enters your context. Take any verdict back with escalate. Never for writing text or code, deterministic checks (exit codes, exact strings, file existence), or options you cannot list.
+description: "Use before a step that is a decision, not writing: did a command, build or test run succeed (log, test output, build output); triaging or filtering MANY items (which of these files or grep hits matter, is it relevant, flaky vs real failures); waiting for a background process or dev server to be ready or stuck; checking a screenshot; or gating one risky command. Jev reads the file, log, process or image itself and returns a small typed verdict, so the data never enters your context. Take any verdict back with escalate. Never for writing text or code, deterministic checks (exit codes, exact strings, file existence), or options you cannot list."
 ---
 
 # Handing off to Jev
