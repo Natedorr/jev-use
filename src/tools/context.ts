@@ -64,6 +64,24 @@ export const questionShape = z.object({
     .describe("noul only (optional): what a yes and a no mean, to sharpen calibration."),
 });
 
+/**
+ * `questions` as MCP callers send it. The array of `questionShape` is the
+ * canonical form and what the schema advertises first; a lone question, a JSON
+ * string, or an id -> question map are accepted too (see `normalizeQuestions`)
+ * because not every model can emit an array argument.
+ */
+export const questionsInput = z
+  .union([
+    z.array(z.union([questionShape, z.record(z.string(), z.unknown()), z.string()])).min(1),
+    questionShape,
+    z.string(),
+    z.record(z.string(), z.unknown()),
+  ])
+  .describe(
+    "All questions you have about this state - batch them. An array of {type, question, options|levels|criteria}; " +
+      "if you cannot send an array, send one question object or a JSON string of the array.",
+  );
+
 /** The `source` argument as MCP callers send it. */
 export const sourceShape = z
   .object({

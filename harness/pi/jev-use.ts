@@ -1,6 +1,7 @@
 /**
  * pi extension (github.com/badlogic/pi-mono): pi has no MCP support, so
- * this registers jev_judge / jev_gate as native pi tools, importing the
+ * this registers jev_judge / jev_gate as native pi tools (jev_filter, jev_wait
+ * and jev_judge's source/images are not mirrored yet — follow-up), importing the
  * dependency-free engine directly (no MCP round trip, no node_modules —
  * the judge path uses only Node built-ins).
  *

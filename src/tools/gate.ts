@@ -19,13 +19,13 @@ export function registerGate(server: McpServer, ctx: ToolContext): void {
     {
       title: "Gate an action with Jev",
       description:
-        "Ask Jev to risk-check ONE proposed agent action against the current state in a single " +
-        "sub-second call. Returns {decision: allow|deny|escalate, confidence, confidenceFrom, hint}. " +
-        "escalate means Jev is not sure enough either way — judge the action yourself. " +
-        "Use this by hand only for a one-off risky/irreversible action. If gating is per-tool-call " +
-        "and repeats, do not call this every turn: wire `jev-use hook gate` as a PreToolUse hook " +
-        "once and the decision leaves the conversation entirely — measured, 24 gated commands cost " +
-        "17.1s and ZERO LLM tokens through the hook, vs 46.9s and $0.2366 through a supervisor LLM.",
+        "Risk-check ONE proposed action against the current state: allow, deny or escalate. " +
+        "Use by hand only for a one-off risky or irreversible action. " +
+        "Don't call it every turn: wire `jev-use hook gate` as a PreToolUse hook once and every " +
+        "gated call leaves the conversation (24 commands: 17.1s, zero LLM tokens, vs 46.9s and $0.2366 " +
+        "through a supervisor LLM). Pass big context as `source`, not pasted. " +
+        "Returns {decision, confidence, confidenceFrom, hint}. " +
+        "escalate = Jev is not sure either way: judge the action yourself.",
       inputSchema: {
         state: z
           .string()

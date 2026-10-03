@@ -4,6 +4,7 @@ import { loadImages, MAX_IMAGES } from "../images.js";
 import { judge } from "../judge.js";
 import {
   ESTIMATED_CONFIDENCE_THRESHOLD,
+  normalizeQuestions,
   REPORTED_CONFIDENCE_THRESHOLD,
 } from "../protocol.js";
 import { allowedPaths } from "../sources.js";
@@ -11,7 +12,7 @@ import {
   errorResult,
   joinState,
   limitsFor,
-  questionShape,
+  questionsInput,
   resolveForCall,
   sourceShape,
   type ToolContext,
@@ -23,26 +24,17 @@ export function registerJudge(server: McpServer, ctx: ToolContext): void {
     {
       title: "Batch fast judgments with Jev",
       description:
-        "Hand a batch of quick judgment questions to Jev (TypeSafe AI's System One model): " +
-        "a typed verdict in a few hundred milliseconds, at a judgment-model rate instead of " +
-        "LLM reasoning. " +
-        "Use it whenever the next step is a JUDGMENT over facts you ALREADY have in context — did X " +
-        "succeed, which option next, how good is Y — not a generation. Batch every question you " +
-        "have about one state into ONE call (batching is where the speedup comes from). " +
-        "If the data to judge is sitting in a file, pass `source` instead of `state` so the server " +
-        "reads it and the data never passes through this conversation. " +
-        "Do NOT use it for anything that needs new text/code written, or choices whose options you " +
-        "cannot enumerate — that work is yours. " +
-        "Each verdict returns {answer, confidence, confidenceFrom, escalate, reason, hint}. " +
-        "confidenceFrom says where the number came from: \"reported\" = Jev's own confidence head, " +
-        "\"estimated\" = worked out by jev-use from the answer's distribution. escalate=true means the " +
-        "question is handed back to you: writing/open_ended = structurally yours, " +
-        "oversized = the state is too big to judge, " +
-        "unsure = Jev's answer is only a prior (it is still included) — decide yourself, " +
-        "unreachable = Jev is down, proceed without it, " +
-        "no_vision = the model or backend cannot read images (set JEV_VISION_MODEL=clef-flash). " +
-        "To check a screenshot without reading it into your context, pass its path in `images`: " +
-        "the server reads and encodes it, and only the verdict comes back.",
+        "Answer typed judgment questions (yes/no, pick one, score) about one state in a few hundred ms. " +
+        "Use when you must decide: did the build/test/command succeed, which next action, how severe, " +
+        "is this screenshot an error. Batch every question about one state into ONE call. " +
+        "Don't Read a file or paste a log just to pass it here: give `source` ({file, tail|head|lines|grep}) " +
+        "or `images` (paths) and the server reads it, so only the verdict returns. " +
+        "Not for new text/code, exit codes, exact-string matches, or options you cannot list. " +
+        "Returns per question {answer, confidence, confidenceFrom, escalate, reason, hint}; " +
+        "confidenceFrom is \"reported\" (Jev's own head) or \"estimated\" (from the distribution). " +
+        "escalate=true hands the question back: writing/open_ended = yours, oversized = narrow the source, " +
+        "unsure = answer is only a prior, unreachable = proceed without Jev, " +
+        "no_vision = set JEV_VISION_MODEL=clef-flash.",
       inputSchema: {
         state: z
           .string()
@@ -54,10 +46,7 @@ export function registerJudge(server: McpServer, ctx: ToolContext): void {
               "use `source` instead. Give `state`, `source`, or both (state then frames the source).",
           ),
         source: sourceShape.optional(),
-        questions: z
-          .array(questionShape)
-          .min(1)
-          .describe("All questions you have about this state — batch them."),
+        questions: questionsInput,
         confidence_threshold: z
           .number()
           .min(0)
@@ -84,11 +73,12 @@ export function registerJudge(server: McpServer, ctx: ToolContext): void {
         model: z.string().optional().describe("Backend model override, e.g. jev-latest."),
       },
     },
-    async ({ state, source, questions, confidence_threshold, images, model }) => {
+    async ({ state, source, questions: rawQuestions, confidence_threshold, images, model }) => {
       if (state === undefined && !source && !images?.length) {
         return errorResult("Give `state`, `source`, `images`, or a mix — there is nothing to judge.");
       }
       try {
+        const questions = normalizeQuestions(rawQuestions);
         // A call with images and no explicit model goes to the vision model.
         const effective = model ?? (images?.length ? ctx.env.JEV_VISION_MODEL || undefined : undefined);
         const { limits } = limitsFor(ctx, effective);

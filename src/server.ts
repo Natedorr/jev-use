@@ -24,7 +24,7 @@ import { registerWait } from "./tools/wait.js";
 import type { ToolContext } from "./tools/context.js";
 
 export const SERVER_NAME = "jev-use";
-export const SERVER_VERSION = "0.8.0";
+export const SERVER_VERSION = "0.9.0";
 
 /** Build the MCP server: its tools over one already-resolved backend. */
 export function createServer(

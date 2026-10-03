@@ -294,3 +294,33 @@ describe("gate", () => {
     expect(seenState).toContain("a.ts");
   });
 });
+
+import { normalizeQuestions } from "../src/protocol.js";
+
+describe("normalizeQuestions", () => {
+  const q = { type: "noul", question: "Did it pass?" };
+  it("passes the canonical array through", () => {
+    expect(normalizeQuestions([q])).toEqual([q]);
+  });
+  it("wraps a lone question object", () => {
+    expect(normalizeQuestions(q)).toEqual([q]);
+  });
+  it("parses a JSON string of an array or of one question", () => {
+    expect(normalizeQuestions(JSON.stringify([q]))).toEqual([q]);
+    expect(normalizeQuestions(JSON.stringify(q))).toEqual([q]);
+  });
+  it("accepts an Ollama-style id -> question map", () => {
+    const out = normalizeQuestions({
+      team: { type: "choice", instructions: "Which team?", criteria: { billing: "Refunds", other: null } },
+      urgency: { type: "score", instructions: "How urgent?", criteria: ["Low", "High"] },
+    });
+    expect(out).toEqual([
+      { id: "team", type: "choice", question: "Which team?", options: { billing: "Refunds", other: "other" } },
+      { id: "urgency", type: "score", question: "How urgent?", levels: ["Low", "High"] },
+    ]);
+  });
+  it("rejects non-JSON strings and non-objects", () => {
+    expect(() => normalizeQuestions("is it ok?")).toThrow(/not valid JSON/);
+    expect(() => normalizeQuestions(42)).toThrow(/array/);
+  });
+});

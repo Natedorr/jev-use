@@ -341,3 +341,78 @@ export function pick<const Label extends string>(
 export function rate(question: string, levels: string[]): ScoreQuestion {
   return { type: "score", question, levels };
 }
+
+const TYPE_ALIASES: Record<string, QuestionType> = {
+  noul: "noul",
+  yesno: "noul",
+  yes_no: "noul",
+  boolean: "noul",
+  bool: "noul",
+  choice: "choice",
+  pick: "choice",
+  select: "choice",
+  score: "score",
+  rate: "score",
+  scale: "score",
+};
+
+function parseJsonText(value: string, what: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    throw new Error(`${what} is a string but not valid JSON; send an array of question objects.`);
+  }
+}
+
+function normalizeQuestion(raw: unknown, key?: string): Question {
+  const value = typeof raw === "string" ? parseJsonText(raw, "A question") : raw;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Each question must be an object: {type, question, options|levels|criteria}.");
+  }
+  const q = { ...(value as Record<string, unknown>) };
+  // Ollama's /v1/systemone spelling: `instructions` for the text, `criteria` for options/levels.
+  if (q.question === undefined && typeof q.instructions === "string") q.question = q.instructions;
+  delete q.instructions;
+  if (typeof q.type === "string") q.type = TYPE_ALIASES[q.type.toLowerCase()] ?? q.type;
+  if (q.id === undefined && key !== undefined) q.id = key;
+  const crit = q.criteria;
+  if (q.type === "choice" && q.options === undefined && crit && typeof crit === "object" && !Array.isArray(crit)) {
+    q.options = crit;
+    delete q.criteria;
+  } else if (q.type === "score" && q.levels === undefined && Array.isArray(crit)) {
+    q.levels = crit;
+    delete q.criteria;
+  }
+  if (q.options && typeof q.options === "object" && !Array.isArray(q.options)) {
+    // A null meaning lets the option name describe itself.
+    q.options = Object.fromEntries(
+      Object.entries(q.options).map(([label, meaning]) => [label, typeof meaning === "string" ? meaning : label]),
+    );
+  }
+  return q as unknown as Question;
+}
+
+/**
+ * Accept every spelling of "the questions" that models actually send, and
+ * return the canonical `Question[]`. Weaker tool-callers cannot always emit an
+ * array, so these all work:
+ *
+ *   - an array of question objects (canonical)
+ *   - ONE question object (a lone `{type, question, ...}`)
+ *   - a JSON string of either of the above
+ *   - an `id → question` map, the shape of Ollama's /v1/systemone
+ *
+ * Question aliases: `instructions` for `question`, `criteria` as the options
+ * (choice) or levels (score), and a few type spellings (`pick`, `rate`, …).
+ * Anything else is rejected by screening, unchanged.
+ */
+export function normalizeQuestions(input: unknown): Question[] {
+  const value = typeof input === "string" ? parseJsonText(input, "`questions`") : input;
+  if (Array.isArray(value)) return value.map((q) => normalizeQuestion(q));
+  if (value && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    if (typeof obj.type === "string") return [normalizeQuestion(obj)];
+    return Object.entries(obj).map(([id, q]) => normalizeQuestion(q, id));
+  }
+  throw new Error("`questions` must be an array of question objects.");
+}

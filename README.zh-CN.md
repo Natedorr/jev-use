@@ -45,6 +45,23 @@ npx -y jev-use install    # 自动配置 Claude Code / Codex / pi——检测到
 把关）：[harness/claude-code](harness/claude-code/README.md) ·
 [harness/codex](harness/codex/README.md)。
 
+## 四个工具,按引用传递
+
+Jev 不替代 Grep、Glob 或 Read。Grep/Glob 负责查找,Read 用于写代码前必须亲眼看到的内容,Jev
+回答关于“不需要你亲眼看到的内容”的问题——数据不会进入你的上下文:
+
+| 工具 | 用途 |
+| --- | --- |
+| `jev_judge` | 针对同一状态的类型化问题;`source` 读取文件或日志末尾,`images` 检查截图 |
+| `jev_filter` | 按一个问题对大量文件、grep 命中或日志块排序或计数 |
+| `jev_wait` | 一次调用等待后台进程就绪、失败或退出 |
+| `jev_gate` | 单个有风险的操作;每次调用都要把关时,请用 PreToolUse 钩子 |
+
+批量模式:**Grep 缩小范围 → `jev_filter` 按语义排序 → 只 Read 留下的文件。**
+截图按路径传递(`JEV_VISION_MODEL=clef-flash`),不做脱敏;使用远程后端时截图会原样离开本机。
+
+<!-- TODO: 请母语者审校本节(结构性翻译,未润色)。 -->
+
 ## 作为库使用
 
 `npm i jev-use`——判断路径零运行时依赖：

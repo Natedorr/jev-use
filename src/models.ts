@@ -43,7 +43,17 @@ const NIMBLE: ModelProfile = {
   questionSetInPrompt: true,
 };
 
-const CLEF_FLASH: ModelProfile = { ...HOSTED, vision: true };
+/**
+ * Ollama's /v1/systemone takes 1-64 questions and 2-26 options per choice or
+ * score question, for every decision model (docs/ollama-*.md).
+ */
+const OLLAMA_LIMITS = { maxQuestions: 64, maxOptions: 26 };
+
+/** Clef and Clef-Flash are both multimodal. */
+const CLEF: ModelProfile = { ...HOSTED, ...OLLAMA_LIMITS, vision: true };
+
+/** Tev1 is text-only and was trained on 2-24 options, so stay inside that. */
+const TEV1: ModelProfile = { ...HOSTED, ...OLLAMA_LIMITS, maxOptions: 24 };
 
 /** Tokens held back for the instruction text around state and questions. */
 const PROMPT_MARGIN_TOKENS = 512;
@@ -59,7 +69,8 @@ export function profileFor(
 ): ModelProfile {
   const name = (model ?? "").toLowerCase();
   if (name.startsWith("nimble")) return NIMBLE;
-  if (name.startsWith("clef-flash")) return CLEF_FLASH;
+  if (name.startsWith("clef")) return CLEF;
+  if (name.startsWith("tev1")) return TEV1;
   const override = Number(env.JEV_CONTEXT_TOKENS);
   if (!name.startsWith("jev") && Number.isFinite(override) && override > 0) {
     return { ...HOSTED, contextTokens: override };

@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "jev-use",
-      "description": "Hand the steps needing no text output to Jev: jev_judge / jev_gate MCP tools, a routing skill, and typed escalation back to the LLM",
+      "description": "Hand the steps needing no text output to Jev: jev_judge / jev_gate / jev_filter / jev_wait MCP tools, a routing skill, and typed escalation back to the LLM",
       "source": "./"
     }
   ]

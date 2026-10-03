@@ -10,14 +10,12 @@ export function registerWait(server: McpServer, ctx: ToolContext): void {
     {
       title: "Wait for a running process with Jev",
       description:
-        "Block until a process you already started in the background is ready, has failed or is " +
-        "gone, and get back one small status instead of polling with `cat` and sleep. Start the " +
-        "process with background Bash, then pass its `output_file` (and `pid` if you have it). " +
-        "Returns {status, label, alive, waited_s, checks}: 1 ready (`until` matched), 2 failed " +
-        "(`fail_if` matched), 3 exited (with `outcome`: success|failure|unclear), 0 timeout (still " +
-        "running — call again), 4 escalate (Jev was unsure and nothing clearer followed by the deadline, or it could not tell whether a silent process finished: read the output yourself).Liveness is " +
-        "checked locally and for free; Jev is asked only when new output appears. With only `pid` " +
-        "and no questions it is a pure is-it-alive wait that never calls Jev. " +
+        "Block until a background process is ready, failed or gone, and return one small status. " +
+        "Use after starting a dev server, build or long job with background Bash: pass its `output_file` " +
+        "(and `pid`) with `until` / `fail_if` questions. " +
+        "Don't poll with cat and sleep. With only `pid` it is a free is-it-alive wait. " +
+        "Returns {status, label, alive, waited_s, checks}: 1 ready, 2 failed, 3 exited (`outcome`: " +
+        "success|failure|unclear), 0 timeout (still running: call again), 4 escalate (read the output yourself). " +
         `timeout_s defaults to ${DEFAULT_WAIT_TIMEOUT_S}, max ${MAX_WAIT_TIMEOUT_S}.`,
       inputSchema: {
         output_file: z.string().optional().describe("The background task's output file."),

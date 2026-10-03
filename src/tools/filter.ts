@@ -10,14 +10,16 @@ export function registerFilter(server: McpServer, ctx: ToolContext): void {
     {
       title: "Filter many items by meaning with Jev",
       description:
-        "Judge each of many items (files, grep hits, log lines, test failures) against ONE question " +
-        "on the server and get back only the survivors, so you Read just those instead of all of " +
-        "them. Use it AFTER Grep/Glob has narrowed the candidates by exact text or name: " +
-        "Grep -l → jev_filter(paths, \"Does this file handle session expiry?\") → Read the few " +
-        "that match. Give exactly one of paths, glob, file+each, or grep_output, and exactly one of " +
-        "`question` (yes/no relevance → matches or ranked) or `choice` (counts per option, e.g. " +
-        "flaky / real_failure / infra). Items Jev is unsure about are listed by id in `escalated`: " +
-        `look at those yourself. At most ${MAX_FILTER_ITEMS} items per call.`,
+        "Rank or filter MANY items (files, grep hits, log lines, test failures) by one question and get " +
+        "back only the survivors. " +
+        "Use after Grep/Glob narrowed the candidates: Grep -l, then jev_filter(paths, \"Does this handle session expiry?\"), " +
+        "then Read only the matches. Also for triage: `choice` over a log's lines or blocks gives counts " +
+        "(flaky / real_failure / infra). " +
+        "Don't Read the items first and never call Jev once per item. " +
+        "Give exactly one of paths, glob, file+each, grep_output, and exactly one of `question` " +
+        "(matches or ranked) or `choice` (counts). " +
+        `At most ${MAX_FILTER_ITEMS} items. ` +
+        "Ids in `escalated` are ones Jev was unsure of: look at those yourself.",
       inputSchema: {
         paths: z.array(z.string()).optional().describe("Explicit file list, e.g. from `grep -l`."),
         glob: z
