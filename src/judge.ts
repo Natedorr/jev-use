@@ -15,6 +15,7 @@ import {
   escalateIfUnsure,
   margin,
   screenQuestions,
+  type ScreenLimits,
 } from "./dispatch.js";
 import {
   serializeState,
@@ -36,8 +37,21 @@ type IdentifiedQuestion = Question & { id: string };
 export async function judge(
   backend: JevBackend,
   request: JudgeRequest,
+  limits?: ScreenLimits,
 ): Promise<JudgeResult> {
-  const screened = screenQuestions(request.state, request.questions);
+  const images = request.images ?? [];
+  const screened = screenQuestions(request.state, request.questions, {
+    ...limits,
+    ...(images.length
+      ? {
+          images: {
+            count: images.length,
+            base64Bytes: images.reduce((sum, image) => sum + image.length, 0),
+            backendVision: backend.supportsImages !== false,
+          },
+        }
+      : {}),
+  });
 
   const verdicts: Verdict[] = new Array(request.questions.length);
   for (const handedBack of screened.handedBack) {
@@ -54,6 +68,7 @@ export async function judge(
         state: request.state,
         questions: screened.sendable.map((sendable) => sendable.question),
         model: request.model,
+        ...(images.length ? { images } : {}),
       });
       model = response.model ?? model;
       latencyMs = response.latencyMs;
@@ -191,6 +206,7 @@ function clamp01(value: number): number {
 export async function gate(
   backend: JevBackend,
   request: GateRequest,
+  limits?: ScreenLimits,
 ): Promise<GateResult> {
   const { tool, input, description } = request.action;
   const action = [
@@ -221,7 +237,7 @@ export async function gate(
     ],
     confidenceThreshold: request.confidenceThreshold,
     model: request.model,
-  });
+  }, limits);
 
   const verdict = result.verdicts[0];
   const decision: GateResult["decision"] = verdict.escalate

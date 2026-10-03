@@ -315,3 +315,49 @@ Honest findings from these runs:
   goal-level `check` rejects the 1,809 km route at 0.33 (`unsure`), the fix
   is more text so the fields return to the LLM with the geocoder's answer as
   evidence, and the second attempt verifies at 0.94.
+
+# Bulk relevance: `jev_filter`
+
+2026-10-03 · local `nimble` on Ollama (``) · concurrency 4 · default excerpt (first 80 lines per file).
+
+Question over `src/**/*.ts` (26 files, 125,960 bytes): *"Does this file handle
+escalation reasons (why a question is handed back to the calling LLM)?"*,
+`return: "ranked"`, `top_k: 8`.
+
+| | |
+| --- | --- |
+| items judged | 26 (0 skipped) |
+| wall time | 33.5 s (about 1.3 s per item at concurrency 4) |
+| result returned to the agent | 510 bytes: 8 ranked `{item, p}` plus 3 escalated ids |
+| reading every candidate instead | 125,960 bytes (about 31k tokens), roughly 250x more |
+| top of the ranking | `protocol.ts` .999, `dispatch.ts` .988, `tools/judge.ts` .983, `index.ts` .968, `server.ts` .824; the rest below .26 |
+| escalated (unsure) | `jev.ts`, `judge.ts`, `tools/filter.ts` — the agent decides |
+
+Caveats: the five top hits are plausible, but `judge.ts` (where reasons are
+set) landed in `escalated` rather than the ranking, and the default
+`head: 80` excerpt means a file is judged on its opening lines only. For
+"does this file *contain* X" questions, pass `excerpt: { grep, context }`.
+Wall time is dominated by the model, not the file reads.
+
+# Agent behaviour with the rewritten skill and descriptions
+
+2026-10-03 · `claude -p` with the plugin loaded (`--plugin-dir .`, `--setting-sources project`), fixtures in a scratch directory, `JEV_MODEL=clef-flash` on local Ollama. One run per prompt.
+
+| Prompt | First tool picked | Right tool? | Notes |
+| --- | --- | --- | --- |
+| "Did that build fail?" (300-line log) | `Skill jev-use` → `jev_judge` `source: {file, tail: 200}` | yes | no Read first |
+| "Triage test.log: flaky / real / infra" | `Skill jev-use` → `jev_filter` `file, each: block, choice` | yes | |
+| "Which .ts files deal with session expiry?" (4 files) | `Glob` → `Grep` → `Read` | arguably | too few files to justify a filter call |
+| "Find where redactSecrets is defined" | `Grep` | yes | the should-not-use-Jev case |
+
+Both Jev calls timed out at 60 s (four runs hit the Ollama box at once, and the
+`block` split saw my log as one block), so Jev returned `unreachable`/`escalated`
+and the agent correctly read the data itself. The escalation contract held;
+the latency numbers here are not a measurement. Not run: `jev_wait`,
+screenshots.
+
+**Found while validating:** an older copy of the skill in `~/.claude/skills/jev-use`
+shadows the plugin's. A first run (no `--setting-sources`) loaded it, tried the
+`jev-use judge` CLI, and only then reached `jev_judge`. Replace or remove that copy.
+MCP tools are also deferred behind ToolSearch, so the skill text, not the tool
+description, is what first points the agent at them.

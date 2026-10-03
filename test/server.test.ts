@@ -5,10 +5,16 @@
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { ListRootsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { MockBackend } from "../src/backends/mock.js";
 import {
   ESTIMATED_CONFIDENCE_THRESHOLD,
+  estimateTokens,
   REPORTED_CONFIDENCE_THRESHOLD,
 } from "../src/protocol.js";
 import { createServer } from "../src/server.js";
@@ -25,10 +31,10 @@ async function connectedClient(backend = new MockBackend()) {
 }
 
 describe("MCP server", () => {
-  it("exposes exactly jev_judge and jev_gate", async () => {
+  it("exposes exactly jev_judge, jev_gate, jev_filter and jev_wait", async () => {
     const client = await connectedClient();
     const tools = await client.listTools();
-    expect(tools.tools.map((t) => t.name).sort()).toEqual(["jev_gate", "jev_judge"]);
+    expect(tools.tools.map((t) => t.name).sort()).toEqual(["jev_filter", "jev_gate", "jev_judge", "jev_wait"]);
   });
 
   /**
@@ -127,5 +133,208 @@ describe("MCP server", () => {
       (res.content as { type: string; text: string }[])[0].text,
     );
     expect(parsed.decision).toBe("allow");
+  });
+});
+
+describe("source on jev_judge", () => {
+  /** A backend that records the state it was asked to judge. */
+  function recording(script = {}) {
+    const backend = new MockBackend(script);
+    const seen: string[] = [];
+    const original = backend.judge.bind(backend);
+    backend.judge = async (request) => {
+      seen.push(String(request.state));
+      return original(request);
+    };
+    return { backend, seen };
+  }
+
+  async function withFile(
+    content: string,
+    backend = new MockBackend(),
+    env: Record<string, string> = {},
+  ) {
+    const root = mkdtempSync(join(tmpdir(), "jev-server-"));
+    writeFileSync(join(root, "run.log"), content);
+    const server = createServer(backend, { root, env });
+    const client = new Client({ name: "test-client", version: "0.0.0" });
+    const [c, s] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(s), client.connect(c)]);
+    return client;
+  }
+
+  const askFailed = [{ id: "failed", type: "noul", question: "Did the run fail?" }];
+  const textOf = (res: unknown) =>
+    JSON.parse((res as { content: { text: string }[] }).content[0].text);
+
+  it("judges a file by reference and reports what was read", async () => {
+    const { backend, seen } = recording({ failed: { answer: 0.9 } });
+    const client = await withFile("step 1 ok\nstep 2 FAILED\n", backend);
+    const res = await client.callTool({
+      name: "jev_judge",
+      arguments: { source: { file: "run.log", tail: 1 }, questions: askFailed },
+    });
+    const parsed = textOf(res);
+    expect(parsed.verdicts[0].answer).toBe(0.9);
+    expect(parsed.source).toEqual({ origin: "run.log tail 1", truncated: false });
+    expect(seen[0]).toContain("step 2 FAILED");
+    expect(seen[0]).not.toContain("step 1 ok");
+  });
+
+  it("jev_wait: returns a status over MCP for a pid that is already gone", async () => {
+    const { backend } = recording({ outcome: { answer: "success" } });
+    const client = await withFile("all done\n", backend);
+    const res = await client.callTool({
+      name: "jev_wait",
+      arguments: { output_file: "run.log", pid: 2 ** 22 + 12345, timeout_s: 5 },
+    });
+    expect(res.isError).toBeFalsy();
+    expect(textOf(res)).toMatchObject({ status: 3, label: "exited", alive: false });
+  });
+
+  it("jev_wait: errors without output_file or pid", async () => {
+    const client = await withFile("x\n");
+    const res = await client.callTool({ name: "jev_wait", arguments: {} });
+    expect(res.isError).toBe(true);
+  });
+
+  it("uses state as framing text when both are given", async () => {
+    const { backend, seen } = recording();
+    const client = await withFile("hello\n", backend);
+    await client.callTool({
+      name: "jev_judge",
+      arguments: { state: "CI log follows", source: { file: "run.log" }, questions: askFailed },
+    });
+    expect(seen[0]).toBe("CI log follows\n\n--- source: run.log ---\nhello");
+  });
+
+  it("errors when neither state nor source is given", async () => {
+    const client = await withFile("x\n");
+    const res = await client.callTool({ name: "jev_judge", arguments: { questions: askFailed } });
+    expect(res.isError).toBe(true);
+  });
+
+  it("returns an error, not a verdict, for a path outside the root", async () => {
+    const client = await withFile("x\n");
+    const res = await client.callTool({
+      name: "jev_judge",
+      arguments: { source: { file: "../nope.log" }, questions: askFailed },
+    });
+    expect(res.isError).toBe(true);
+  });
+
+  it("cuts a source to fit nimble's budget and says so", async () => {
+    const { backend, seen } = recording();
+    const client = await withFile("x".repeat(100_000), backend, { JEV_MODEL: "nimble" });
+    const res = await client.callTool({
+      name: "jev_judge",
+      arguments: { source: { file: "run.log" }, questions: askFailed },
+    });
+    const parsed = textOf(res);
+    expect(parsed.source.truncated).toBe(true);
+    expect(parsed.verdicts[0].reason).not.toBe("oversized");
+    expect(seen[0].length).toBeLessThan(32_000);
+  });
+});
+
+describe("source on jev_gate", () => {
+  it("leaves room for the action and the gate question in nimble's budget", async () => {
+    const backend = new MockBackend({
+      gate: { answer: "allow", distribution: { allow: 0.95, deny: 0.05 }, confidence: 0.95 },
+    });
+    const seen: string[] = [];
+    const original = backend.judge.bind(backend);
+    backend.judge = async (request) => {
+      seen.push(String(request.state));
+      return original(request);
+    };
+    const root = mkdtempSync(join(tmpdir(), "jev-gate-"));
+    writeFileSync(join(root, "run.log"), "x".repeat(100_000));
+    const server = createServer(backend, { root, env: { JEV_MODEL: "nimble" } });
+    const client = new Client({ name: "test-client", version: "0.0.0" });
+    const [c, s] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(s), client.connect(c)]);
+
+    const res = await client.callTool({
+      name: "jev_gate",
+      arguments: {
+        state: "deploying",
+        source: { file: "run.log" },
+        tool: "Bash",
+        input: "y".repeat(6_000),
+      },
+    });
+    const parsed = JSON.parse((res.content as { text: string }[])[0].text);
+    expect(parsed.decision).toBe("allow");
+    expect(parsed.source.truncated).toBe(true);
+    expect(estimateTokens(seen[0])).toBeLessThan(8_192 - 512);
+  });
+});
+
+describe("MCP roots", () => {
+  async function withRoots(initial: string[], fallback: string, backend = new MockBackend()) {
+    let roots = initial;
+    const server = createServer(backend, { root: fallback, env: {} });
+    const client = new Client(
+      { name: "test-client", version: "0.0.0" },
+      { capabilities: { roots: { listChanged: true } } },
+    );
+    client.setRequestHandler(ListRootsRequestSchema, async () => ({
+      roots: roots.map((path) => ({ uri: pathToFileURL(path).href })),
+    }));
+    const [c, s] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(s), client.connect(c)]);
+    return {
+      client,
+      setRoots: async (next: string[]) => {
+        roots = next;
+        await client.sendRootsListChanged();
+        await new Promise((r) => setTimeout(r, 20));
+      },
+    };
+  }
+  const dir = (name: string, files: Record<string, string>) => {
+    const path = mkdtempSync(join(tmpdir(), `jev-${name}-`));
+    for (const [file, text] of Object.entries(files)) writeFileSync(join(path, file), text);
+    return path;
+  };
+  const ask = (client: Client, file: string) =>
+    client.callTool({
+      name: "jev_judge",
+      arguments: {
+        source: { file },
+        questions: [{ id: "q", type: "noul", question: "Is it ok?" }],
+      },
+    });
+
+  it("reads from every root the client reports, first match winning", async () => {
+    const a = dir("a", { "one.log": "from a\n", "both.log": "a wins\n" });
+    const b = dir("b", { "two.log": "from b\n", "both.log": "b loses\n" });
+    const launch = dir("launch", { "three.log": "launch dir\n" });
+    const { client } = await withRoots([a, b], launch);
+    expect((await ask(client, "one.log")).isError).toBeFalsy();
+    expect((await ask(client, "two.log")).isError).toBeFalsy();
+    const both = JSON.parse(((await ask(client, "both.log")).content as { text: string }[])[0].text);
+    expect(both.source.origin).toBe("both.log");
+    // The launch directory is not in scope once the client names its roots.
+    expect((await ask(client, "three.log")).isError).toBe(true);
+  });
+
+  it("follows a roots change", async () => {
+    const a = dir("a", { "one.log": "x\n" });
+    const b = dir("b", { "two.log": "y\n" });
+    const { client, setRoots } = await withRoots([a], a);
+    expect((await ask(client, "two.log")).isError).toBe(true);
+    await setRoots([a, b]);
+    expect((await ask(client, "two.log")).isError).toBeFalsy();
+  });
+
+  it("falls back to the launch directory when the client has no roots", async () => {
+    const launch = dir("launch", { "x.log": "ok\n" });
+    const server = createServer(new MockBackend(), { root: launch, env: {} });
+    const client = new Client({ name: "test-client", version: "0.0.0" });
+    const [c, s] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(s), client.connect(c)]);
+    expect((await ask(client, "x.log")).isError).toBeFalsy();
   });
 });

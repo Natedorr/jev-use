@@ -20,7 +20,7 @@ await client.connect(transport);
 
 const tools = await client.listTools();
 const names = tools.tools.map((t) => t.name).sort();
-assertEqual(JSON.stringify(names), JSON.stringify(["jev_gate", "jev_judge"]), "tool list");
+assertEqual(JSON.stringify(names), JSON.stringify(["jev_filter", "jev_gate", "jev_judge", "jev_wait"]), "tool list");
 
 const res = await client.callTool({
   name: "jev_judge",

@@ -8,6 +8,7 @@
  * question is written.
  */
 
+import { stateBudget, type ModelProfile } from "./models.js";
 import {
   confidenceThresholdFor,
   DEFAULT_MAX_STATE_TOKENS,
@@ -24,6 +25,18 @@ import {
 export interface ScreenLimits {
   /** Hand back the batch when the serialized state exceeds this. Default 30k. */
   maxStateTokens?: number;
+  /**
+   * The judging model's limits. Sets the state budget (less the question set
+   * for models that re-read it per question), and caps question and option
+   * counts and the request body. `maxStateTokens` still wins when given.
+   */
+  profile?: ModelProfile;
+  /**
+   * Images riding with the call. Handed back as `no_vision` when the model or
+   * the backend cannot take them; their base64 size counts toward the model's
+   * body limit.
+   */
+  images?: { count: number; base64Bytes: number; backendVision: boolean };
 }
 
 /** One question handed back before the call, with the verdict that says why. */
@@ -75,21 +88,49 @@ export function screenQuestions(
     ...question,
     id: question.id ?? defaultQuestionId(index),
   }));
-  const maxStateTokens = limits.maxStateTokens ?? DEFAULT_MAX_STATE_TOKENS;
+  const profile = limits.profile;
+  const maxStateTokens =
+    limits.maxStateTokens ??
+    (profile ? stateBudget(profile, questions) : DEFAULT_MAX_STATE_TOKENS);
+
+  const handAll = (hint: string): ScreenedQuestions => ({
+    sendable: [],
+    handedBack: identified.map((question, index) =>
+      handBack(question, index, "oversized", hint),
+    ),
+    oversized: true,
+  });
+  if (limits.images && limits.images.count > 0) {
+    const { backendVision } = limits.images;
+    if (!backendVision || (profile && !profile.vision)) {
+      const reason = !backendVision
+        ? "This backend has no documented image support; judge the screenshot yourself or use the typesafe backend."
+        : "This model cannot read images: set JEV_VISION_MODEL=clef-flash (the only vision model jev-use knows, on the typesafe backend) or pass `model` as clef-flash.";
+      return {
+        sendable: [],
+        handedBack: identified.map((question, index) => handBack(question, index, "no_vision", reason)),
+      };
+    }
+  }
+  const narrow =
+    "use `source.tail`/`grep` to narrow it, `jev_filter` for many items, or take the question over yourself";
+
+  if (profile?.maxBodyBytes !== undefined) {
+    const imageBytes = limits.images?.base64Bytes ?? 0;
+    const bytes = Buffer.byteLength(JSON.stringify({ state, questions })) + imageBytes;
+    if (bytes > profile.maxBodyBytes) {
+      return handAll(
+        imageBytes > 0
+          ? `Request is ${bytes} bytes (images ${imageBytes}); the model accepts at most ${profile.maxBodyBytes}. Capture a smaller viewport or fewer images.`
+          : `Request is ${bytes} bytes; the model accepts at most ${profile.maxBodyBytes}. Shrink the state: ${narrow}.`,
+      );
+    }
+  }
 
   if (estimateTokens(state) > maxStateTokens) {
-    return {
-      sendable: [],
-      handedBack: identified.map((question, index) =>
-        handBack(
-          question,
-          index,
-          "oversized",
-          `State exceeds ~${maxStateTokens} tokens; shrink it (summarize, drop stale entries) or take the question over yourself.`,
-        ),
-      ),
-      oversized: true,
-    };
+    return handAll(
+      `State exceeds ~${maxStateTokens} tokens for this model; shrink it (summarize, drop stale entries) — ${narrow}.`,
+    );
   }
 
   const sendable: ScreenedQuestions["sendable"] = [];
@@ -109,6 +150,30 @@ export function screenQuestions(
       return;
     }
     seenIds.add(question.id);
+
+    if (profile && sendable.length >= profile.maxQuestions) {
+      handedBack.push(
+        handBack(
+          question,
+          index,
+          "oversized",
+          `This model takes at most ${profile.maxQuestions} questions per call; send this one in a second call.`,
+        ),
+      );
+      return;
+    }
+    const optionCount = question.options ? optionEntries(question.options).length : 0;
+    if (profile && optionCount > profile.maxOptions) {
+      handedBack.push(
+        handBack(
+          question,
+          index,
+          "oversized",
+          `This model takes at most ${profile.maxOptions} options per choice question; got ${optionCount}.`,
+        ),
+      );
+      return;
+    }
 
     const problem = whyUnaskable(question);
     if (problem) {

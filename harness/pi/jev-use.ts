@@ -1,6 +1,7 @@
 /**
  * pi extension (github.com/badlogic/pi-mono): pi has no MCP support, so
- * this registers jev_judge / jev_gate as native pi tools, importing the
+ * this registers jev_judge / jev_gate as native pi tools (jev_filter, jev_wait
+ * and jev_judge's source/images are not mirrored yet — follow-up), importing the
  * dependency-free engine directly (no MCP round trip, no node_modules —
  * the judge path uses only Node built-ins).
  *
@@ -110,7 +111,7 @@ export default function (pi: PiExtensionAPI): void {
       "Batch quick judgment questions (noul/choice/score) about one state to Jev — " +
       "~100ms, calibrated probabilities. Batch everything about one state into one call. " +
       "Verdicts with escalate:true are handed back to you (reason: writing | " +
-      "open_ended | oversized | unsure | unreachable).",
+      "open_ended | oversized | no_vision | unsure | unreachable).",
     parameters: {
       type: "object",
       properties: {

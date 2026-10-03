@@ -37,7 +37,7 @@ export class TypeSafeBackend implements JevBackend {
 
   async judge(request: BackendRequest): Promise<BackendResponse> {
     const model = request.model ?? this.options.defaultModel ?? TYPESAFE_DEFAULT_MODEL;
-    const body = toNativeBody(request.state, request.questions, model);
+    const body = toNativeBody(request.state, request.questions, model, request.images);
     const started = Date.now();
     const response = (await postJson(
       this.name,

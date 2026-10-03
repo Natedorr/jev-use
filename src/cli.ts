@@ -24,13 +24,16 @@ import { fileURLToPath } from "node:url";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createBackend, createServerBackend } from "./backends/index.js";
 import type { JevBackend } from "./backends/types.js";
+import { effectiveEnv } from "./config.js";
 import { Jev } from "./jev.js";
+import { profileFor } from "./models.js";
 import { judge } from "./judge.js";
 import { runInstall } from "./install.js";
 import {
   check,
   ESTIMATED_CONFIDENCE_THRESHOLD,
   REPORTED_CONFIDENCE_THRESHOLD,
+  normalizeQuestions,
   type JudgeRequest,
 } from "./protocol.js";
 import { createServer, SERVER_VERSION } from "./server.js";
@@ -204,7 +207,8 @@ async function hookGate(args: Args): Promise<void> {
  */
 async function judgeOnce(args: Args): Promise<void> {
   const raw = args.json ?? (await readStdin());
-  const request = JSON.parse(raw) as JudgeRequest;
+  const parsed = JSON.parse(raw) as JudgeRequest;
+  const request = { ...parsed, questions: normalizeQuestions(parsed.questions) };
   const { backend } = connect(args);
   const result = await judge(backend, {
     ...request,
@@ -215,7 +219,7 @@ async function judgeOnce(args: Args): Promise<void> {
 }
 
 /** The allow rules a harness needs before it may call jev's MCP tools. */
-const MCP_ALLOW_RULES = ["mcp__jev__jev_judge", "mcp__jev__jev_gate"];
+const MCP_ALLOW_RULES = ["mcp__jev__jev_judge", "mcp__jev__jev_gate", "mcp__jev__jev_filter", "mcp__jev__jev_wait"];
 
 /** The settings files a user would put those rules in: their own, then this project's. */
 function claudeSettingsFiles(): string[] {
@@ -274,7 +278,7 @@ function reportClaudePermissions(): void {
       "          MCP tools are never auto-allowed (acceptEdits covers file edits only),\n" +
       "          and headless `claude -p` has nobody to ask, so the call is refused.\n" +
       `          Add to ${join(homedir(), ".claude", "settings.json")} (or a project's .claude/settings.json):\n\n` +
-      '          {"permissions": {"allow": ["mcp__jev__jev_judge", "mcp__jev__jev_gate"]}}\n\n' +
+      '          {"permissions": {"allow": ["mcp__jev__jev_judge", "mcp__jev__jev_gate", "mcp__jev__jev_filter", "mcp__jev__jev_wait"]}}\n\n' +
       `          checked: ${claudeSettingsFiles().join(", ")}\n`,
   );
 }
@@ -300,7 +304,36 @@ async function doctor(args: Args): Promise<void> {
     process.stdout.write(`error   : ${ping.hint ?? "unknown"}\n`);
     process.exitCode = 1;
   }
+  await reportVision(jev);
   reportClaudePermissions();
+}
+
+/** Whether images can be judged: the vision model, what it supports, and one live round trip to it. */
+async function reportVision(jev: Jev): Promise<void> {
+  const env = effectiveEnv();
+  const model = env.JEV_VISION_MODEL;
+  if (!model) {
+    process.stdout.write("vision  : off (set JEV_VISION_MODEL, e.g. clef-flash, to judge screenshots)\n");
+    return;
+  }
+  if (jev.backend.supportsImages === false) {
+    process.stdout.write(`vision  : ${model} cannot be used: the ${jev.backend.name} backend takes no images\n`);
+    return;
+  }
+  if (!profileFor(model, jev.backend.name, env).vision) {
+    process.stdout.write(`vision  : ${model} is not a vision model (use clef-flash)\n`);
+    return;
+  }
+  const started = Date.now();
+  const { answers } = await jev.judge(
+    "doctor check: the string 'jev-use' appears in this state.",
+    { ping: check("Does the state mention jev-use?") },
+    { model },
+  );
+  const reachable = answers.ping.reason !== "unreachable";
+  process.stdout.write(
+    `vision  : ${model} ${reachable ? `reachable (${Date.now() - started}ms)` : `UNREACHABLE: ${answers.ping.hint ?? "unknown"}`}\n`,
+  );
 }
 
 export const HELP = `jev-use ${SERVER_VERSION} — the typed handoff between your LLM and Jev
@@ -315,6 +348,13 @@ usage:
 backends: typesafe (TYPESAFE_API_KEY) | openrouter (OPENROUTER_API_KEY)
         | vercel (AI_GATEWAY_API_KEY) | mock. Auto-detected from env,
         or forced with --backend / JEV_BACKEND. Model override: JEV_MODEL.
+
+MCP tools read: JEV_VISION_MODEL (model for calls with images, e.g. clef-flash),
+JEV_CONTEXT_TOKENS (window for unprofiled models), JEV_ALLOW_PATHS (extra readable
+directories), JEV_FILTER_CONCURRENCY (parallel calls in jev_filter).
+Model limits, forced when a model outgrows the built-in profile: JEV_VISION=on|off,
+JEV_MAX_QUESTIONS, JEV_MAX_OPTIONS, JEV_MAX_BODY_BYTES. How jev_judge advertises
+"questions" to the caller: JEV_QUESTIONS_INPUT=any|array|single|string.
 
 hook gate also reads two env vars: JEV_GATE_THRESHOLD, the confidence to
 escalate below — unset, each answer's confidence source decides, and

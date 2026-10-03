@@ -1,0 +1,30 @@
+{
+  "_comment": "Model profiles, matched by longest case-insensitive name prefix. Omit maxQuestions/maxOptions/maxBodyBytes for no limit. Add your own in ~/.config/jev-use/models.json (or JEV_MODELS_FILE): same format, entries merge over these field by field. Docs: docs/reference.md, Model profiles.",
+  "defaults": {
+    "contextTokens": 64000,
+    "vision": false
+  },
+  "models": {
+    "jev": {
+      "_note": "Hosted Jev. Listed so JEV_CONTEXT_TOKENS never applies to it."
+    },
+    "nimble": {
+      "contextTokens": 8192,
+      "maxQuestions": 64,
+      "maxOptions": 26,
+      "maxBodyBytes": 65536,
+      "questionSetInPrompt": true
+    },
+    "clef": {
+      "_note": "Clef and Clef-Flash; both multimodal.",
+      "maxQuestions": 64,
+      "maxOptions": 26,
+      "vision": true
+    },
+    "tev1": {
+      "_note": "Text-only; trained on 2-24 options.",
+      "maxQuestions": 64,
+      "maxOptions": 24
+    }
+  }
+}

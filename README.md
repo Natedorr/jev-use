@@ -74,6 +74,23 @@ local Ollama can need ~30 s cold load on the first call. For pi, the same
 env block goes in the `mcp.json` server entry — see
 [harness/pi-mcp](harness/pi-mcp/README.md).
 
+## Four tools, by reference
+
+Jev does not replace Grep, Glob or Read. Grep/Glob find, Read is for what you
+must see to write, and Jev answers questions about what you don't need to
+see — so the data never enters your context:
+
+| Tool | Use it for |
+| --- | --- |
+| `jev_judge` | typed questions about one state; `source` reads a file or log tail, `images` checks a screenshot |
+| `jev_filter` | many files, grep hits or log blocks ranked or counted by one question |
+| `jev_wait` | one call that waits for a background process to be ready, failed or gone |
+| `jev_gate` | one risky action; for every call, use the PreToolUse hook |
+
+The bulk pattern: **Grep narrows → `jev_filter` ranks by meaning → Read only the
+survivors.** Screenshots go by path (`JEV_VISION_MODEL=clef-flash`) and are not
+redacted, so with a remote backend they leave the machine as-is.
+
 ## Use as a library
 
 `npm i jev-use` — zero runtime dependencies on the judgment path:

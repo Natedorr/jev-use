@@ -82,6 +82,8 @@ interface GatewayResponse {
 
 export class VercelBackend implements JevBackend {
   readonly name = "vercel";
+  /** The gateway spec documents no image field, so none is sent. */
+  readonly supportsImages = false;
 
   constructor(private readonly options: VercelOptions) {}
 
